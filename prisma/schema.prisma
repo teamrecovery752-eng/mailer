@@ -1,0 +1,61 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  USER
+}
+
+model User {
+  id           String     @id @default(auto()) @map("_id") @db.ObjectId
+  email        String     @unique
+  name         String
+  passwordHash String
+  role         Role       @default(USER)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  emailLogs    EmailLog[]
+
+  @@map("users")
+}
+
+// ─── Email Logs ───────────────────────────────────────────────────────────────
+
+enum EmailType {
+  SINGLE
+  BULK
+}
+
+enum EmailStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+model EmailLog {
+  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String      @db.ObjectId
+  user        User        @relation(fields: [userId], references: [id])
+
+  type        EmailType
+  status      EmailStatus
+  subject     String
+  recipients  String[]    // list of email addresses
+  totalSent   Int         @default(0)
+  totalFailed Int         @default(0)
+  errors      String[]    @default([])
+  messageId   String?     // SES message ID (single emails)
+  sentAt      DateTime    @default(now())
+
+  @@map("email_logs")
+}
