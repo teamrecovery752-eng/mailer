@@ -36,10 +36,10 @@ export default function DashboardPage() {
       {/* Header */}
       <div style={{ marginBottom: 32 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Dashboard</h1>
-        <p style={{ color: "#8888a0" }}>Welcome back. Your SES email portal is ready.</p>
+        <p style={{ color: "#8888a0" }}>Welcome back. Your email portal is ready.</p>
       </div>
 
-      {/* SES Status */}
+      {/* Provider Status */}
       <div style={{ ...card, border: `1px solid ${borderColor}`, display: "flex", alignItems: "center", gap: 16, marginBottom: 32 }}>
         {checking
           ? <Activity size={18} color="#8888a0" />
@@ -49,18 +49,22 @@ export default function DashboardPage() {
         }
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 600, fontSize: 13 }}>
-            {checking ? "Checking SES connection…" : conn?.connected ? "Amazon SES Connected" : "SES Connection Failed"}
+            {checking
+              ? "Checking connection…"
+              : conn?.connected
+                ? `${conn.provider === "CPANEL" ? "cPanel Email" : "Amazon SES"} Connected`
+                : `${conn?.provider === "CPANEL" ? "cPanel Email" : "Amazon SES"} Connection Failed`}
           </div>
           {!checking && (
             <div style={{ fontSize: 12, color: "#8888a0", marginTop: 2 }}>
-              {conn?.connected ? `Region: ${conn.region} · From: ${conn.fromEmail}` : conn?.error}
+              {conn?.connected ? conn.detail : conn?.error}
             </div>
           )}
         </div>
         {!checking && !conn?.connected && (
-          <a href="https://console.aws.amazon.com/ses" target="_blank" rel="noopener noreferrer"
+          <a href="/dashboard/settings"
             style={{ fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 8, background: "rgba(99,102,241,0.1)", color: "#6366f1", textDecoration: "none" }}>
-            AWS Console →
+            Fix in Settings →
           </a>
         )}
       </div>
@@ -101,10 +105,10 @@ export default function DashboardPage() {
         <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>📋 First-time setup checklist</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {[
-            "Verify recoverlance.com domain in AWS SES console",
-            "Add DKIM, DMARC, and SPF DNS records to your domain",
-            "Request production access (exit SES sandbox)",
-            "Set DATABASE_URL, NEXTAUTH_SECRET, and AWS credentials in Vercel",
+            "Choose a provider (Amazon SES or cPanel Email) in Settings",
+            "Verify your sending domain and add DKIM/DMARC/SPF DNS records",
+            "For SES: request production access (exit SES sandbox)",
+            "Set DATABASE_URL and NEXTAUTH_SECRET in Vercel",
           ].map((item, i) => (
             <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, color: "#8888a0", fontSize: 13 }}>
               <span style={{ width: 20, height: 20, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0, background: "rgba(99,102,241,0.1)", color: "#6366f1" }}>{i + 1}</span>

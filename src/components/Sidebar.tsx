@@ -1,8 +1,9 @@
 "use client";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { LayoutDashboard, Send, Users, History, LogOut, ShieldCheck, Zap, UserCog } from "lucide-react";
+import { LayoutDashboard, Send, Users, History, LogOut, ShieldCheck, Zap, Server, UserCog, Settings } from "lucide-react";
 
 const baseNav = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Overview" },
@@ -12,6 +13,7 @@ const baseNav = [
 ];
 const adminNav = [
   { href: "/dashboard/users", icon: UserCog, label: "Users" },
+  { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
 
 const S = {
@@ -71,6 +73,13 @@ export default function Sidebar() {
   const isAdmin = (session?.user as any)?.role === "ADMIN";
   const nav = isAdmin ? [...baseNav, ...adminNav] : baseNav;
 
+  const [provider, setProvider] = useState<"SES" | "CPANEL" | null>(null);
+  useEffect(() => {
+    fetch("/api/settings").then(r => r.json()).then(d => setProvider(d.active)).catch(() => {});
+  }, []);
+  const providerLabel = provider === "CPANEL" ? "cPanel Email" : provider === "SES" ? "Amazon SES" : "Loading…";
+  const ProviderIcon = provider === "CPANEL" ? Server : Zap;
+
   return (
     <aside style={S.aside}>
       {/* Logo */}
@@ -115,10 +124,10 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* SES badge */}
+      {/* Active provider badge */}
       <div style={S.badge}>
-        <Zap size={13} color="#22c55e" style={{ flexShrink: 0 }} />
-        <span style={{ fontSize: 12, color: "#8888a0" }}>Amazon SES</span>
+        <ProviderIcon size={13} color="#22c55e" style={{ flexShrink: 0 }} />
+        <span style={{ fontSize: 12, color: "#8888a0" }}>{providerLabel}</span>
         <div style={S.dot} />
       </div>
 

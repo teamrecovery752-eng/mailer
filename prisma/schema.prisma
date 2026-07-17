@@ -59,3 +59,40 @@ model EmailLog {
 
   @@map("email_logs")
 }
+
+// ─── Mail Provider Settings ────────────────────────────────────────────────
+
+enum MailProvider {
+  SES
+  CPANEL
+}
+
+// Singleton document (one row) holding the active provider + credentials
+// for every supported email backend. Only ADMIN users may read/write this
+// via /api/settings. Whichever provider is `active` is used by
+// src/lib/mailer.ts for every outgoing email.
+model MailSettings {
+  id     String       @id @default(auto()) @map("_id") @db.ObjectId
+  active MailProvider @default(SES)
+
+  // Shared "from" identity, used by whichever provider is active
+  fromName  String @default("")
+  fromEmail String @default("")
+
+  // Amazon SES credentials
+  sesRegion          String @default("us-east-1")
+  sesAccessKeyId     String @default("")
+  sesSecretAccessKey String @default("")
+
+  // cPanel / generic SMTP credentials (works for any cPanel-hosted mailbox,
+  // e.g. mail.yourdomain.com on port 465/587)
+  smtpHost     String  @default("")
+  smtpPort     Int     @default(465)
+  smtpSecure   Boolean @default(true)
+  smtpUsername String  @default("")
+  smtpPassword String  @default("")
+
+  updatedAt DateTime @updatedAt
+
+  @@map("mail_settings")
+}

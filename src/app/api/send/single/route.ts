@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { sendSingleEmail } from "@/lib/ses";
+import { sendSingleEmail } from "@/lib/mailer";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
@@ -10,8 +10,8 @@ export async function POST(req: NextRequest) {
   try {
     const { to, subject, htmlBody, textBody, replyTo } = await req.json();
 
-    if (!to || !subject || !htmlBody)
-      return NextResponse.json({ error: "Missing required fields: to, subject, htmlBody" }, { status: 400 });
+    if (!to || !subject || (!htmlBody && !textBody))
+      return NextResponse.json({ error: "Missing required fields: to, subject, and htmlBody or textBody" }, { status: 400 });
 
     const emails = Array.isArray(to) ? to : [to];
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -31,11 +31,11 @@ export async function POST(req: NextRequest) {
         recipients: emails,
         totalSent: emails.length,
         totalFailed: 0,
-        messageId: result.MessageId,
+        messageId: result.messageId,
       },
     });
 
-    return NextResponse.json({ success: true, messageId: result.MessageId });
+    return NextResponse.json({ success: true, messageId: result.messageId });
   } catch (err: any) {
     // Log failure
     try {
