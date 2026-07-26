@@ -1,12 +1,12 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, CheckCircle2, XCircle, Zap, Server, Save, PlugZap } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Zap, Server, Save, PlugZap, Send } from "lucide-react";
 
 const inputS: React.CSSProperties = { width: "100%", padding: "11px 14px", background: "#18181f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, color: "#f0f0f5", fontSize: 14, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
 const labelS: React.CSSProperties = { display: "block", marginBottom: 6, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "#8888a0" };
 const card: React.CSSProperties = { background: "#111116", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 24 };
 
-type Provider = "SES" | "CPANEL";
+type Provider = "SES" | "CPANEL" | "RESEND";
 
 type Settings = {
   active: Provider;
@@ -20,6 +20,7 @@ type Settings = {
   smtpSecure: boolean;
   smtpUsername: string;
   smtpPassword: string;
+  resendApiKey: string;
 };
 
 function Field({ label, value, onChange, type = "text", placeholder }: { label: string; value: string | number; onChange: (v: string) => void; type?: string; placeholder?: string }) {
@@ -140,6 +141,7 @@ export default function SettingsPage() {
   const providers: { id: Provider; label: string; sub: string; icon: any }[] = [
     { id: "SES", label: "Amazon SES", sub: "AWS Simple Email Service", icon: Zap },
     { id: "CPANEL", label: "cPanel Email (SMTP)", sub: "Any cPanel-hosted mailbox or SMTP server", icon: Server },
+    { id: "RESEND", label: "Resend", sub: "resend.com transactional email API", icon: Send },
   ];
 
   return (
@@ -151,7 +153,7 @@ export default function SettingsPage() {
 
       <form onSubmit={handleSave} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         {/* Provider picker */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
           {providers.map(({ id, label, sub, icon: Icon }) => {
             const active = settings.active === id;
             return (
@@ -225,6 +227,19 @@ export default function SettingsPage() {
               </div>
               <Field label="Username" value={settings.smtpUsername} onChange={(v) => update("smtpUsername", v)} placeholder="noreply@yourdomain.com" />
               <Field label="Password" value={settings.smtpPassword} onChange={(v) => update("smtpPassword", v)} type="password" placeholder="Leave blank to keep current value" />
+            </div>
+          </div>
+        )}
+
+        {/* Resend fields */}
+        {settings.active === "RESEND" && (
+          <div style={card}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Resend Credentials</div>
+            <p style={{ fontSize: 12, color: "#8888a0", marginBottom: 16 }}>
+              Create a key at resend.com/api-keys, and make sure your "From Email" domain is a verified sender in Resend.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <Field label="API Key" value={settings.resendApiKey} onChange={(v) => update("resendApiKey", v)} type="password" placeholder="re_... — leave blank to keep current value" />
             </div>
           </div>
         )}

@@ -65,6 +65,7 @@ model EmailLog {
 enum MailProvider {
   SES
   CPANEL
+  RESEND
 }
 
 // Singleton document (one row) holding the active provider + credentials
@@ -91,6 +92,9 @@ model MailSettings {
   smtpSecure   Boolean @default(true)
   smtpUsername String  @default("")
   smtpPassword String  @default("")
+
+  // Resend credentials (https://resend.com/api-keys)
+  resendApiKey String @default("")
 
   updatedAt DateTime @updatedAt
 

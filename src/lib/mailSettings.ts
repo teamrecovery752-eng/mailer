@@ -13,6 +13,7 @@ export interface ResolvedMailSettings {
   smtpSecure: boolean;
   smtpUsername: string;
   smtpPassword: string;
+  resendApiKey: string;
 }
 
 // There should only ever be one MailSettings document. This finds it,
@@ -30,6 +31,7 @@ export async function getMailSettings(): Promise<ResolvedMailSettings> {
       sesRegion: process.env.AWS_REGION || "us-east-1",
       sesAccessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
       sesSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
+      resendApiKey: process.env.RESEND_API_KEY || "",
     },
   });
   return created;
@@ -49,5 +51,6 @@ export function maskSettings(settings: ResolvedMailSettings) {
     ...settings,
     sesSecretAccessKey: settings.sesSecretAccessKey ? "••••••••" : "",
     smtpPassword: settings.smtpPassword ? "••••••••" : "",
+    resendApiKey: settings.resendApiKey ? "••••••••" : "",
   };
 }

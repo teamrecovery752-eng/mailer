@@ -108,7 +108,7 @@ export default function DashboardPage() {
             "Choose a provider (Amazon SES or cPanel Email) in Settings",
             "Verify your sending domain and add DKIM/DMARC/SPF DNS records",
             "For SES: request production access (exit SES sandbox)",
-            "Set DATABASE_URL and NEXTAUTH_SECRET in Vercel",
+            "Set DATABASE_URL and AUTH_SECRET in Vercel",
           ].map((item, i) => (
             <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, color: "#8888a0", fontSize: 13 }}>
               <span style={{ width: 20, height: 20, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0, background: "rgba(99,102,241,0.1)", color: "#6366f1" }}>{i + 1}</span>

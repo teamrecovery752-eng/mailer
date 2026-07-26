@@ -32,8 +32,9 @@ export async function PUT(req: NextRequest) {
     const body = await req.json();
     const current = await getMailSettings();
 
+    const activeValues = ["SES", "CPANEL", "RESEND"];
     const data = {
-      active: body.active === "CPANEL" ? "CPANEL" : "SES",
+      active: activeValues.includes(body.active) ? body.active : "SES",
       fromName: body.fromName ?? current.fromName,
       fromEmail: body.fromEmail ?? current.fromEmail,
 
@@ -46,6 +47,8 @@ export async function PUT(req: NextRequest) {
       smtpSecure: body.smtpSecure ?? current.smtpSecure,
       smtpUsername: body.smtpUsername ?? current.smtpUsername,
       smtpPassword: body.smtpPassword || current.smtpPassword,
+
+      resendApiKey: body.resendApiKey || current.resendApiKey,
     } as const;
 
     const updated = await updateMailSettings(data);

@@ -1,12 +1,15 @@
 import { getMailSettings } from "@/lib/mailSettings";
 import { sesAdapter } from "@/lib/providers/ses";
 import { cpanelAdapter } from "@/lib/providers/cpanel";
+import { resendAdapter } from "@/lib/providers/resend";
 import type { BulkRecipient, SingleEmailParams, ConnectionTestResult } from "@/lib/providers/types";
 
 export type { SingleEmailParams, BulkRecipient };
 
-function adapterFor(provider: "SES" | "CPANEL") {
-  return provider === "CPANEL" ? cpanelAdapter : sesAdapter;
+function adapterFor(provider: "SES" | "CPANEL" | "RESEND") {
+  if (provider === "CPANEL") return cpanelAdapter;
+  if (provider === "RESEND") return resendAdapter;
+  return sesAdapter;
 }
 
 export async function sendSingleEmail(params: SingleEmailParams) {
