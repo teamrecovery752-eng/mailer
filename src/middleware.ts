@@ -10,9 +10,20 @@ export async function middleware(req: NextRequest) {
   // used to pass `secret: undefined`, which made every request to a
   // protected route throw inside the middleware — i.e. you'd never
   // actually reach /dashboard even with a valid login.
+  // Auth.js prefixes its session cookie with "__Secure-" whenever the site
+  // is served over HTTPS (which Vercel always is). getToken() doesn't infer
+  // that on its own — without `secureCookie: true`, it looks for the plain
+  // "authjs.session-token" cookie, never finds it (because the real one is
+  // "__Secure-authjs.session-token"), and silently treats every request as
+  // logged out. That's what was bouncing valid logins straight back to
+  // /login: the credentials POST succeeded and set the cookie, but this
+  // middleware couldn't see it on the very next request.
+  const secureCookie = req.nextUrl.protocol === "https:";
+
   const token = await getToken({
     req,
     secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
+    secureCookie,
   });
 
   if (!token) {

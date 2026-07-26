@@ -16,8 +16,27 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true); setError("");
 
+    // Belt-and-braces: even with the try/catch below, a genuinely hung
+    // request (e.g. the DB connection stalling) would otherwise leave the
+    // button stuck on "Signing in…" forever. Race it against a timeout so
+    // the user always gets feedback.
+    const timeout = new Promise<{ timedOut: true }>((resolve) =>
+      setTimeout(() => resolve({ timedOut: true }), 15000)
+    );
+
     try {
-      const res = await signIn("credentials", { email, password, redirect: false });
+      const result = await Promise.race([
+        signIn("credentials", { email, password, redirect: false }),
+        timeout,
+      ]);
+
+      if ("timedOut" in result) {
+        setError("This is taking longer than expected. Check your connection and try again.");
+        setLoading(false);
+        return;
+      }
+
+      const res = result;
 
       if (res?.ok) {
         router.push("/dashboard");
