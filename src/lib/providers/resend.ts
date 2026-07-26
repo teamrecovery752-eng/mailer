@@ -10,14 +10,28 @@ async function sendSingleEmail(settings: ResolvedMailSettings, params: SingleEma
   const client = buildClient(settings);
   const toAddresses = Array.isArray(params.to) ? params.to : [params.to];
 
-  const { data, error } = await client.emails.send({
+  if (!params.htmlBody && !params.textBody) {
+    throw new Error("sendSingleEmail requires htmlBody or textBody.");
+  }
+
+  const base = {
     from: `${settings.fromName} <${settings.fromEmail}>`,
     to: toAddresses,
     subject: params.subject,
-    ...(params.htmlBody && { html: params.htmlBody }),
-    ...(params.textBody && { text: params.textBody }),
     ...(params.replyTo && { replyTo: params.replyTo }),
-  });
+  };
+
+  // Resend's `send()` type is a discriminated union keyed on which content
+  // field is present (html/text/react/template), and it must be provable
+  // at compile time — a conditionally-spread `{ ...(x && {html: x}) }`
+  // object doesn't satisfy that, so we branch explicitly instead.
+  const { data, error } = params.htmlBody
+    ? await client.emails.send({
+        ...base,
+        html: params.htmlBody,
+        ...(params.textBody && { text: params.textBody }),
+      })
+    : await client.emails.send({ ...base, text: params.textBody as string });
 
   if (error) throw new Error(error.message || "Resend send failed");
   return { messageId: data?.id };
