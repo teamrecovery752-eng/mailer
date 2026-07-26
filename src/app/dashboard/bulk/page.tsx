@@ -60,15 +60,49 @@ export default function BulkEmailPage() {
       complete: (res) => {
         const data = res.data as any[];
         if (!data.length) return;
-        const cols = Object.keys(data[0]);
-        if (!cols.includes("email")) { showToast("error", "CSV missing a required column", 'Add an "email" column and re-upload.'); return; }
-        setCsvColumns(cols);
-        setRecipients(data.slice(0, 10000));
+
+        const rawCols = Object.keys(data[0]);
+
+        // Match "email" case-insensitively and ignore stray whitespace or a
+        // leading UTF-8 BOM — both are extremely common in CSVs exported
+        // from Excel/Google Sheets (e.g. "Email", "EMAIL", " email ", or a
+        // BOM-prefixed first header) and would otherwise fail this check
+        // even though a perfectly valid email column is right there.
+        const normalize = (s: string) => s.replace(/^\uFEFF/, "").trim().toLowerCase();
+        const emailCol = rawCols.find((c) => normalize(c) === "email");
+
+        if (!emailCol) {
+          showToast("error", "CSV missing a required column", 'Add an "email" column and re-upload.');
+          return;
+        }
+
+        // The rest of the app (merge tags, /api/send/bulk) expects a
+        // lowercase `email` key on every recipient object. If the actual
+        // header was e.g. "Email", copy its value onto a canonical `email`
+        // key without dropping the original — so a template still using
+        // {{Email}} keeps working too.
+        const normalizedData = emailCol === "email"
+          ? data
+          : data.map((row) => ({ ...row, email: row[emailCol] }));
+
+        setCsvColumns(rawCols.includes("email") ? rawCols : [...rawCols, "email"]);
+        setRecipients(normalizedData.slice(0, 10000));
       },
     });
   }
 
   function clearCSV() { setRecipients([]); setCsvColumns([]); setCsvFile(""); setFailedErrors([]); if (fileRef.current) fileRef.current.value = ""; }
+
+  function resetComposeForm(opts?: { keepFailedErrors?: boolean }) {
+    setRecipients([]);
+    setCsvColumns([]);
+    setCsvFile("");
+    setSubject("");
+    setBody("");
+    setActiveTemplateId(null);
+    if (fileRef.current) fileRef.current.value = "";
+    if (!opts?.keepFailedErrors) setFailedErrors([]);
+  }
 
   function switchMode(next: Mode) {
     setMode(next);
@@ -105,12 +139,18 @@ export default function BulkEmailPage() {
         const { sent = 0, failed = 0, errors = [] } = data;
         if (failed === 0) {
           showToast("success", "Campaign sent", `${sent.toLocaleString()} recipient${sent === 1 ? "" : "s"} delivered.`);
+          resetComposeForm();
         } else if (sent === 0) {
           showToast("error", "Campaign failed to send", `All ${failed.toLocaleString()} recipients failed. See details below.`);
           setFailedErrors(errors);
         } else {
           showToast("error", "Campaign sent with some failures", `${sent.toLocaleString()} delivered, ${failed.toLocaleString()} failed. See details below.`);
           setFailedErrors(errors);
+          // Partial send: clear the compose fields (subject/body/CSV) since
+          // re-submitting as-is would re-email everyone who already
+          // succeeded, but leave the failure list above visible so it's
+          // clear who still needs a resend.
+          resetComposeForm({ keepFailedErrors: true });
         }
       } else {
         showToast("error", "Couldn't send campaign", data?.error || `Request failed (${res.status}). Please try again.`);

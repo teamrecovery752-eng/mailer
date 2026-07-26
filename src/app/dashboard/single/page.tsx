@@ -77,6 +77,11 @@ export default function SingleEmailPage() {
       if (res.ok && data) {
         const who = recipients.length > 1 ? `${recipients.length} recipients` : recipients[0];
         showToast("success", "Email sent", `Delivered to ${who}.`);
+        setTo("");
+        setToList([]);
+        setSubject("");
+        setBody("");
+        setReplyTo("");
       } else {
         showToast("error", "Couldn't send that email", data?.error || `Request failed (${res.status}). Please try again.`);
       }
