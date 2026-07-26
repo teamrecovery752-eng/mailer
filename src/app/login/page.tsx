@@ -15,9 +15,34 @@ export default function LoginPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true); setError("");
-    const res = await signIn("credentials", { email, password, redirect: false });
+
+    try {
+      const res = await signIn("credentials", { email, password, redirect: false });
+
+      if (res?.ok) {
+        router.push("/dashboard");
+        return;
+      }
+
+      switch (res?.code) {
+        case "missing-credentials":
+          setError("Enter both your email and password.");
+          break;
+        case "account-inactive":
+          setError("This account has been deactivated. Contact an admin for access.");
+          break;
+        case "server-error":
+          setError("We couldn't reach the server. Please try again in a moment.");
+          break;
+        case "invalid-credentials":
+        default:
+          setError("Invalid email or password.");
+      }
+    } catch {
+      setError("Could not reach the server. Check your connection and try again.");
+    }
+
     setLoading(false);
-    res?.ok ? router.push("/dashboard") : setError("Invalid email or password.");
   }
 
   const inputS: React.CSSProperties = {
