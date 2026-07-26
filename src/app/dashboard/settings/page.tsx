@@ -49,6 +49,8 @@ export default function SettingsPage() {
   const [testResult, setTestResult] = useState<any>(null);
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
+  const MASK = "••••••••";
+
   const fetchSettings = useCallback(async () => {
     setLoading(true);
     setLoadError("");
@@ -58,7 +60,20 @@ export default function SettingsPage() {
       if (!res.ok || !data) {
         setLoadError(data?.error || `Request failed (${res.status})`);
       } else {
-        setSettings(data);
+        // The API sends back "••••••••" as a stand-in for any secret
+        // that's already set (so we never round-trip real credentials
+        // to the browser). If we put that literal string straight into
+        // the form field, an unmodified Save would submit "••••••••"
+        // as the new secret — overwriting the real one with garbage
+        // (which is exactly what broke Resend's Authorization header).
+        // Blank these out here; the field's placeholder already tells
+        // the user "leave blank to keep current value".
+        setSettings({
+          ...data,
+          sesSecretAccessKey: data.sesSecretAccessKey === MASK ? "" : data.sesSecretAccessKey,
+          smtpPassword: data.smtpPassword === MASK ? "" : data.smtpPassword,
+          resendApiKey: data.resendApiKey === MASK ? "" : data.resendApiKey,
+        });
       }
     } catch {
       setLoadError("Could not reach the server. Check your connection and try again.");

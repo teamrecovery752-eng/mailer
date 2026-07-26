@@ -32,6 +32,16 @@ export async function PUT(req: NextRequest) {
     const body = await req.json();
     const current = await getMailSettings();
 
+    // Defense in depth: GET responses replace secrets with "••••••••" so
+    // real credentials never round-trip to the browser. If any secret
+    // field literally comes back as that mask (e.g. an old cached client,
+    // or a form submitted without editing the field), treat it the same
+    // as blank — keep the existing value — instead of overwriting the
+    // real secret with literal bullet characters.
+    const MASK = "••••••••";
+    const cleanSecret = (incoming: unknown, existing: string) =>
+      typeof incoming === "string" && incoming && incoming !== MASK ? incoming : existing;
+
     const activeValues = ["SES", "CPANEL", "RESEND"];
     const data = {
       active: activeValues.includes(body.active) ? body.active : "SES",
@@ -40,15 +50,15 @@ export async function PUT(req: NextRequest) {
 
       sesRegion: body.sesRegion ?? current.sesRegion,
       sesAccessKeyId: body.sesAccessKeyId ?? current.sesAccessKeyId,
-      sesSecretAccessKey: body.sesSecretAccessKey || current.sesSecretAccessKey,
+      sesSecretAccessKey: cleanSecret(body.sesSecretAccessKey, current.sesSecretAccessKey),
 
       smtpHost: body.smtpHost ?? current.smtpHost,
       smtpPort: body.smtpPort ? Number(body.smtpPort) : current.smtpPort,
       smtpSecure: body.smtpSecure ?? current.smtpSecure,
       smtpUsername: body.smtpUsername ?? current.smtpUsername,
-      smtpPassword: body.smtpPassword || current.smtpPassword,
+      smtpPassword: cleanSecret(body.smtpPassword, current.smtpPassword),
 
-      resendApiKey: body.resendApiKey || current.resendApiKey,
+      resendApiKey: cleanSecret(body.resendApiKey, current.resendApiKey),
     } as const;
 
     const updated = await updateMailSettings(data);
