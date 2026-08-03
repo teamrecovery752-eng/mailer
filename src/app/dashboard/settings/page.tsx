@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { Loader2, CheckCircle2, XCircle, Zap, Server, Save, PlugZap, Send } from "lucide-react";
+import { notifyMailSettingsUpdated } from "@/lib/mailSettingsEvents";
 
 const inputS: React.CSSProperties = { width: "100%", padding: "11px 14px", background: "#18181f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, color: "#f0f0f5", fontSize: 14, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
 const labelS: React.CSSProperties = { display: "block", marginBottom: 6, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "#8888a0" };
@@ -104,6 +105,10 @@ export default function SettingsPage() {
         // with the freshly-masked response — just re-fetch cleanly.
         setMessage({ type: "ok", text: "Settings saved." });
         fetchSettings();
+        // Let the Sidebar badge and Dashboard connection banner (already
+        // mounted elsewhere in the layout) pick up the change right away
+        // instead of requiring a page refresh.
+        notifyMailSettingsUpdated();
       } else {
         setMessage({ type: "err", text: data?.error || `Failed to save settings (${res.status}).` });
       }

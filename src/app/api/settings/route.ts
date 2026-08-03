@@ -42,23 +42,31 @@ export async function PUT(req: NextRequest) {
     const cleanSecret = (incoming: unknown, existing: string) =>
       typeof incoming === "string" && incoming && incoming !== MASK ? incoming : existing;
 
+    // Credentials are frequently copy-pasted from a provider's dashboard
+    // (cPanel's "Connect Devices" page, an AWS console, etc.), which very
+    // commonly drags along a trailing space or newline. That's invisible
+    // in a password field but makes SMTP/API auth fail outright (e.g.
+    // cPanel's "535 Incorrect authentication data"). Trim every
+    // credential-ish field before it's ever saved or used.
+    const trim = (v: unknown, fallback: string) => (typeof v === "string" ? v.trim() : fallback);
+
     const activeValues = ["SES", "CPANEL", "RESEND"];
     const data = {
       active: activeValues.includes(body.active) ? body.active : "SES",
-      fromName: body.fromName ?? current.fromName,
-      fromEmail: body.fromEmail ?? current.fromEmail,
+      fromName: trim(body.fromName, current.fromName),
+      fromEmail: trim(body.fromEmail, current.fromEmail),
 
-      sesRegion: body.sesRegion ?? current.sesRegion,
-      sesAccessKeyId: body.sesAccessKeyId ?? current.sesAccessKeyId,
-      sesSecretAccessKey: cleanSecret(body.sesSecretAccessKey, current.sesSecretAccessKey),
+      sesRegion: trim(body.sesRegion, current.sesRegion),
+      sesAccessKeyId: trim(body.sesAccessKeyId, current.sesAccessKeyId),
+      sesSecretAccessKey: trim(cleanSecret(body.sesSecretAccessKey, current.sesSecretAccessKey), current.sesSecretAccessKey),
 
-      smtpHost: body.smtpHost ?? current.smtpHost,
+      smtpHost: trim(body.smtpHost, current.smtpHost),
       smtpPort: body.smtpPort ? Number(body.smtpPort) : current.smtpPort,
       smtpSecure: body.smtpSecure ?? current.smtpSecure,
-      smtpUsername: body.smtpUsername ?? current.smtpUsername,
-      smtpPassword: cleanSecret(body.smtpPassword, current.smtpPassword),
+      smtpUsername: trim(body.smtpUsername, current.smtpUsername),
+      smtpPassword: trim(cleanSecret(body.smtpPassword, current.smtpPassword), current.smtpPassword),
 
-      resendApiKey: cleanSecret(body.resendApiKey, current.resendApiKey),
+      resendApiKey: trim(cleanSecret(body.resendApiKey, current.resendApiKey), current.resendApiKey),
     } as const;
 
     const updated = await updateMailSettings(data);

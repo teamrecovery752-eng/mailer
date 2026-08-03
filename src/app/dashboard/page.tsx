@@ -1,7 +1,8 @@
 "use client";
-import { useState, useEffect } from "react";
-import { Send, Users, Zap, CheckCircle2, XCircle, Activity, ArrowRight } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Send, Users, CheckCircle2, XCircle, Activity, ArrowRight, TrendingUp } from "lucide-react";
 import Link from "next/link";
+import { MAIL_SETTINGS_UPDATED_EVENT } from "@/lib/mailSettingsEvents";
 
 const card = { background: "#111116", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 24 };
 
@@ -31,13 +32,33 @@ function StatCard({ icon: Icon, label, value, sub, color }: any) {
 export default function DashboardPage() {
   const [conn, setConn] = useState<any>(null);
   const [checking, setChecking] = useState(true);
+  const [stats, setStats] = useState<any>(null);
+  const [statsError, setStatsError] = useState(false);
 
-  useEffect(() => {
+  const checkConnection = useCallback(() => {
+    setChecking(true);
     fetch("/api/test-connection")
       .then(r => r.json())
       .then(d => { setConn(d); setChecking(false); })
       .catch(() => { setConn({ connected: false, error: "Could not reach API" }); setChecking(false); });
   }, []);
+
+  const loadStats = useCallback(() => {
+    fetch("/api/stats")
+      .then(r => r.json())
+      .then(d => { if (d?.error) throw new Error(d.error); setStats(d); setStatsError(false); })
+      .catch(() => setStatsError(true));
+  }, []);
+
+  useEffect(() => {
+    checkConnection();
+    loadStats();
+    // Switching providers in Settings changes what "connected" means here
+    // (and the fromEmail shown), so re-check immediately instead of
+    // requiring a page refresh to see the new status.
+    window.addEventListener(MAIL_SETTINGS_UPDATED_EVENT, checkConnection);
+    return () => window.removeEventListener(MAIL_SETTINGS_UPDATED_EVENT, checkConnection);
+  }, [checkConnection, loadStats]);
 
   const borderColor = checking ? "rgba(255,255,255,0.06)" : conn?.connected ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)";
 
@@ -81,10 +102,10 @@ export default function DashboardPage() {
 
       {/* Stat Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 32 }}>
-        <StatCard icon={Send} label="Emails Sent" value="—" sub="Session total" color="#6366f1" />
-        <StatCard icon={CheckCircle2} label="Delivered" value="—" sub="Success rate" color="#22c55e" />
-        <StatCard icon={Users} label="Recipients" value="—" sub="Unique addresses" color="#f59e0b" />
-        <StatCard icon={Zap} label={`${providerLabel(conn?.provider)} Quota`} value="—" sub="Daily limit" color="#a78bfa" />
+        <StatCard icon={Send} label="Emails Sent" value={stats ? stats.emailsSent.toLocaleString() : statsError ? "—" : "…"} sub="All-time total" color="#6366f1" />
+        <StatCard icon={CheckCircle2} label="Delivered" value={stats ? (stats.deliveryRate == null ? "—" : `${stats.deliveryRate}%`) : statsError ? "—" : "…"} sub="Success rate" color="#22c55e" />
+        <StatCard icon={Users} label="Recipients" value={stats ? stats.uniqueRecipients.toLocaleString() : statsError ? "—" : "…"} sub="Unique addresses" color="#f59e0b" />
+        <StatCard icon={TrendingUp} label="Sent Today" value={stats ? stats.sentToday.toLocaleString() : statsError ? "—" : "…"} sub="Since midnight" color="#a78bfa" />
       </div>
 
       {/* Quick Actions */}

@@ -42,7 +42,15 @@ async function testConnection(settings: ResolvedMailSettings): Promise<Connectio
       detail: `Host: ${settings.smtpHost}:${settings.smtpPort} · From: ${settings.fromEmail}`,
     };
   } catch (err: any) {
-    return { connected: false, error: err.message };
+    // "535 Incorrect authentication data" (and similar 5xx auth codes) is
+    // the mail server flatly rejecting the username/password — it's not a
+    // network or TLS problem. Nodemailer's raw message doesn't say that,
+    // so spell out the likely causes instead of just echoing the SMTP text.
+    const isAuthRejected = err.responseCode === 535 || /535|incorrect authentication|auth/i.test(String(err.message || ""));
+    const error = isAuthRejected
+      ? `${err.message} — the mailbox rejected the username/password. Double-check: the username is usually the full email address (e.g. noreply@yourdomain.com), the password has no extra spaces from copy/paste, and this isn't an account that requires an app-specific password.`
+      : err.message;
+    return { connected: false, error };
   }
 }
 

@@ -3,6 +3,11 @@ import { auth } from "@/lib/auth";
 import { sendBulkEmails } from "@/lib/mailer";
 import { prisma } from "@/lib/prisma";
 
+// Bulk campaigns can take a while even when paced/batched correctly.
+// 60s is the highest value Vercel's Hobby plan allows; raise this
+// (e.g. 300) if you're on Pro/Enterprise and send very large lists.
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

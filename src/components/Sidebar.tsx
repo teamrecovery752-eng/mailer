@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { LayoutDashboard, Send, Users, History, LogOut, ShieldCheck, Zap, Server, Mail, UserCog, Settings } from "lucide-react";
+import { MAIL_SETTINGS_UPDATED_EVENT } from "@/lib/mailSettingsEvents";
 
 // Single source of truth for how each mail provider is displayed, so the
 // sidebar badge (and anywhere else that reuses this) stays correct no
@@ -84,7 +85,12 @@ export default function Sidebar() {
 
   const [provider, setProvider] = useState<string | null>(null);
   useEffect(() => {
-    fetch("/api/settings").then(r => r.json()).then(d => setProvider(d.active)).catch(() => {});
+    const load = () => fetch("/api/settings").then(r => r.json()).then(d => setProvider(d.active)).catch(() => {});
+    load();
+    // Refetch the moment Settings saves a new active provider, instead of
+    // requiring a manual page refresh to see the badge update.
+    window.addEventListener(MAIL_SETTINGS_UPDATED_EVENT, load);
+    return () => window.removeEventListener(MAIL_SETTINGS_UPDATED_EVENT, load);
   }, []);
   const meta = provider ? PROVIDER_META[provider] : null;
   const providerLabel = meta?.label ?? "Loading…";
