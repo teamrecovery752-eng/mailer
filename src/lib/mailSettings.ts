@@ -45,12 +45,46 @@ export async function updateMailSettings(data: Partial<ResolvedMailSettings>) {
   return prisma.mailSettings.create({ data: { active: "SES", ...data } });
 }
 
-// Strips secrets before sending settings to the client.
+// Strips secrets before sending settings to the client, but tells the
+// client (via booleans, not the value itself) whether each secret is
+// actually set. Without this, a blank password field looks identical
+// whether it's "already saved, blank = keep it" or "never configured,
+// blank = provider will fail" — which is what let people switch
+// providers and unknowingly save/activate one with missing credentials.
 export function maskSettings(settings: ResolvedMailSettings) {
   return {
     ...settings,
     sesSecretAccessKey: settings.sesSecretAccessKey ? "••••••••" : "",
     smtpPassword: settings.smtpPassword ? "••••••••" : "",
     resendApiKey: settings.resendApiKey ? "••••••••" : "",
+    secretsConfigured: {
+      sesSecretAccessKey: !!settings.sesSecretAccessKey,
+      smtpPassword: !!settings.smtpPassword,
+      resendApiKey: !!settings.resendApiKey,
+    },
   };
+}
+
+// Single source of truth for "is this provider actually ready to send",
+// used both server-side (to refuse saving/activating an incomplete
+// provider) and mirrored client-side (to block the Save button early
+// with a clear message instead of a mysterious auth failure later).
+export function missingCredentialFields(settings: ResolvedMailSettings): string[] {
+  const missing: string[] = [];
+  if (!settings.fromName.trim()) missing.push("From Name");
+  if (!settings.fromEmail.trim()) missing.push("From Email");
+
+  if (settings.active === "SES") {
+    if (!settings.sesRegion.trim()) missing.push("AWS Region");
+    if (!settings.sesAccessKeyId.trim()) missing.push("Access Key ID");
+    if (!settings.sesSecretAccessKey.trim()) missing.push("Secret Access Key");
+  } else if (settings.active === "CPANEL") {
+    if (!settings.smtpHost.trim()) missing.push("SMTP Host");
+    if (!settings.smtpPort) missing.push("Port");
+    if (!settings.smtpUsername.trim()) missing.push("Username");
+    if (!settings.smtpPassword.trim()) missing.push("Password");
+  } else if (settings.active === "RESEND") {
+    if (!settings.resendApiKey.trim()) missing.push("API Key");
+  }
+  return missing;
 }

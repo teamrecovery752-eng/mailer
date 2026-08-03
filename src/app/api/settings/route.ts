@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { getMailSettings, updateMailSettings, maskSettings } from "@/lib/mailSettings";
+import { getMailSettings, updateMailSettings, maskSettings, missingCredentialFields } from "@/lib/mailSettings";
 
 // GET current mail settings (secrets masked). Any authenticated user can see
 // which provider is active, but the raw credentials are never sent down.
@@ -68,6 +68,19 @@ export async function PUT(req: NextRequest) {
 
       resendApiKey: trim(cleanSecret(body.resendApiKey, current.resendApiKey), current.resendApiKey),
     } as const;
+
+    // Refuse to save/activate a provider that's missing required
+    // credentials — this is what used to let a half-configured provider
+    // (e.g. a blank password left blank because a never-set field looked
+    // identical to an intentionally-blank "keep existing" one) get saved
+    // as the active provider and silently fail on the next send.
+    const missing = missingCredentialFields(data as any);
+    if (missing.length) {
+      return NextResponse.json(
+        { error: `Can't save — missing required field${missing.length > 1 ? "s" : ""} for ${data.active}: ${missing.join(", ")}.` },
+        { status: 400 }
+      );
+    }
 
     const updated = await updateMailSettings(data);
     return NextResponse.json(maskSettings(updated));

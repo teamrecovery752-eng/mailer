@@ -9,6 +9,32 @@ const card: React.CSSProperties = { background: "#111116", border: "1px solid rg
 
 type Provider = "SES" | "CPANEL" | "RESEND";
 
+// Mirrors the server-side check in lib/mailSettings.ts so the Save button
+// can block with a clear inline message before ever hitting the API —
+// this is what stops a provider switch from silently persisting with a
+// missing password/API key. A secret counts as present if either the
+// user just typed a new one, or one is already saved server-side
+// (secretsConfigured) and they left it blank to keep it.
+function missingFieldsFor(active: Provider, s: Settings, secretsOk: { sesSecretAccessKey: boolean; smtpPassword: boolean; resendApiKey: boolean }): string[] {
+  const missing: string[] = [];
+  if (!s.fromName.trim()) missing.push("From Name");
+  if (!s.fromEmail.trim()) missing.push("From Email");
+
+  if (active === "SES") {
+    if (!s.sesRegion.trim()) missing.push("AWS Region");
+    if (!s.sesAccessKeyId.trim()) missing.push("Access Key ID");
+    if (!s.sesSecretAccessKey.trim() && !secretsOk.sesSecretAccessKey) missing.push("Secret Access Key");
+  } else if (active === "CPANEL") {
+    if (!s.smtpHost.trim()) missing.push("SMTP Host");
+    if (!s.smtpPort) missing.push("Port");
+    if (!s.smtpUsername.trim()) missing.push("Username");
+    if (!s.smtpPassword.trim() && !secretsOk.smtpPassword) missing.push("Password");
+  } else if (active === "RESEND") {
+    if (!s.resendApiKey.trim() && !secretsOk.resendApiKey) missing.push("API Key");
+  }
+  return missing;
+}
+
 type Settings = {
   active: Provider;
   fromName: string;
@@ -24,18 +50,23 @@ type Settings = {
   resendApiKey: string;
 };
 
-function Field({ label, value, onChange, type = "text", placeholder }: { label: string; value: string | number; onChange: (v: string) => void; type?: string; placeholder?: string }) {
+function Field({ label, value, onChange, type = "text", placeholder, hint }: { label: string; value: string | number; onChange: (v: string) => void; type?: string; placeholder?: string; hint?: { text: string; ok: boolean } }) {
   return (
     <div>
-      <label style={labelS}>{label}</label>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <label style={{ ...labelS, marginBottom: 0 }}>{label}</label>
+        {hint && (
+          <span style={{ fontSize: 11, fontWeight: 600, color: hint.ok ? "#22c55e" : "#f59e0b" }}>{hint.text}</span>
+        )}
+      </div>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         type={type}
         placeholder={placeholder}
-        style={inputS}
+        style={{ ...inputS, ...(hint && !hint.ok ? { borderColor: "rgba(245,158,11,0.4)" } : {}) }}
         onFocus={(e) => (e.target.style.borderColor = "#6366f1")}
-        onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.08)")}
+        onBlur={(e) => (e.target.style.borderColor = hint && !hint.ok ? "rgba(245,158,11,0.4)" : "rgba(255,255,255,0.08)")}
       />
     </div>
   );
@@ -43,6 +74,7 @@ function Field({ label, value, onChange, type = "text", placeholder }: { label: 
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [secretsConfigured, setSecretsConfigured] = useState<{ sesSecretAccessKey: boolean; smtpPassword: boolean; resendApiKey: boolean }>({ sesSecretAccessKey: false, smtpPassword: false, resendApiKey: false });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -75,6 +107,11 @@ export default function SettingsPage() {
           smtpPassword: data.smtpPassword === MASK ? "" : data.smtpPassword,
           resendApiKey: data.resendApiKey === MASK ? "" : data.resendApiKey,
         });
+        // The masked value alone can't tell "already saved, blank = keep
+        // it" apart from "never configured, blank = missing" once the
+        // field above gets cleared for editing — so track that
+        // separately from booleans the server sent explicitly.
+        setSecretsConfigured(data.secretsConfigured || { sesSecretAccessKey: false, smtpPassword: false, resendApiKey: false });
       }
     } catch {
       setLoadError("Could not reach the server. Check your connection and try again.");
@@ -91,6 +128,15 @@ export default function SettingsPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!settings) return;
+
+    // Block early with a clear message instead of silently saving (and
+    // then activating) a provider that's missing a required credential.
+    const missing = missingFieldsFor(settings.active, settings, secretsConfigured);
+    if (missing.length) {
+      setMessage({ type: "err", text: `Can't save — missing required field${missing.length > 1 ? "s" : ""} for ${settings.active}: ${missing.join(", ")}.` });
+      return;
+    }
+
     setSaving(true);
     setMessage(null);
     try {
@@ -176,6 +222,7 @@ export default function SettingsPage() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
           {providers.map(({ id, label, sub, icon: Icon }) => {
             const active = settings.active === id;
+            const configured = missingFieldsFor(id, settings, secretsConfigured).length === 0;
             return (
               <div
                 key={id}
@@ -193,7 +240,11 @@ export default function SettingsPage() {
                   <div style={{ fontWeight: 700, fontSize: 14 }}>{label}</div>
                   {active && <CheckCircle2 size={14} color="#6366f1" style={{ marginLeft: "auto" }} />}
                 </div>
-                <div style={{ fontSize: 12, color: "#8888a0" }}>{sub}</div>
+                <div style={{ fontSize: 12, color: "#8888a0", marginBottom: 8 }}>{sub}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, color: configured ? "#22c55e" : "#f59e0b" }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: configured ? "#22c55e" : "#f59e0b" }} />
+                  {configured ? "Configured" : "Needs setup"}
+                </div>
               </div>
             );
           })}
@@ -215,7 +266,8 @@ export default function SettingsPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <Field label="AWS Region" value={settings.sesRegion} onChange={(v) => update("sesRegion", v)} placeholder="us-east-1" />
               <Field label="Access Key ID" value={settings.sesAccessKeyId} onChange={(v) => update("sesAccessKeyId", v)} placeholder="AKIA..." />
-              <Field label="Secret Access Key" value={settings.sesSecretAccessKey} onChange={(v) => update("sesSecretAccessKey", v)} type="password" placeholder="Leave blank to keep current value" />
+              <Field label="Secret Access Key" value={settings.sesSecretAccessKey} onChange={(v) => update("sesSecretAccessKey", v)} type="password" placeholder={secretsConfigured.sesSecretAccessKey ? "Leave blank to keep the saved key" : "Required — no key saved yet"}
+                hint={secretsConfigured.sesSecretAccessKey ? { text: "✓ Saved", ok: true } : { text: "Not set — required", ok: false }} />
             </div>
           </div>
         )}
@@ -246,7 +298,8 @@ export default function SettingsPage() {
                 </select>
               </div>
               <Field label="Username" value={settings.smtpUsername} onChange={(v) => update("smtpUsername", v)} placeholder="noreply@yourdomain.com" />
-              <Field label="Password" value={settings.smtpPassword} onChange={(v) => update("smtpPassword", v)} type="password" placeholder="Leave blank to keep current value" />
+              <Field label="Password" value={settings.smtpPassword} onChange={(v) => update("smtpPassword", v)} type="password" placeholder={secretsConfigured.smtpPassword ? "Leave blank to keep the saved password" : "Required — no password saved yet"}
+                hint={secretsConfigured.smtpPassword ? { text: "✓ Saved", ok: true } : { text: "Not set — required", ok: false }} />
             </div>
           </div>
         )}
@@ -259,7 +312,8 @@ export default function SettingsPage() {
               Create a key at resend.com/api-keys, and make sure your "From Email" domain is a verified sender in Resend.
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <Field label="API Key" value={settings.resendApiKey} onChange={(v) => update("resendApiKey", v)} type="password" placeholder="re_... — leave blank to keep current value" />
+              <Field label="API Key" value={settings.resendApiKey} onChange={(v) => update("resendApiKey", v)} type="password" placeholder={secretsConfigured.resendApiKey ? "re_... — leave blank to keep the saved key" : "Required — no key saved yet"}
+                hint={secretsConfigured.resendApiKey ? { text: "✓ Saved", ok: true } : { text: "Not set — required", ok: false }} />
             </div>
           </div>
         )}
