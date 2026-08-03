@@ -2,8 +2,45 @@
 import { useState, useRef } from "react";
 import { Upload, Send, Loader2, FileText, X, AlertTriangle, Code2, AlignLeft, LayoutTemplate, Check } from "lucide-react";
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import { marketingTemplates } from "@/lib/marketingTemplates";
 import { useToast } from "@/components/Toast";
+
+// Spreadsheet file extensions accepted by the recipient uploader.
+const SPREADSHEET_ACCEPT = ".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.ods";
+const DELIMITED_EXTENSIONS = new Set(["csv", "tsv", "txt"]);
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Case-insensitive, whitespace/BOM-tolerant column name match. Handles
+// "Email", " EMAIL ", a BOM-prefixed first header, etc.
+const normalizeHeader = (s: string) => String(s).replace(/^\uFEFF/, "").trim().toLowerCase();
+
+// Given raw parsed rows (from either CSV/TSV via PapaParse or a sheet via
+// SheetJS), find the "email" and "name" columns regardless of their exact
+// capitalisation, surrounding whitespace, or position/number of columns in
+// the file, and copy their values onto canonical lowercase `email` / `name`
+// keys the rest of the app expects — without dropping the original column
+// (so a template using the original header as a merge tag still works).
+function normalizeRecipientRows(rawRows: Record<string, any>[]) {
+  if (!rawRows.length) return { data: [] as any[], columns: [] as string[], emailCol: null as string | null };
+
+  const rawCols = Object.keys(rawRows[0]);
+  const emailCol = rawCols.find((c) => normalizeHeader(c) === "email") || null;
+  const nameCol = rawCols.find((c) => normalizeHeader(c) === "name") || null;
+
+  const data = rawRows.map((row) => {
+    const next: Record<string, any> = { ...row };
+    if (emailCol) next.email = typeof row[emailCol] === "string" ? row[emailCol].trim() : row[emailCol];
+    if (nameCol) next.name = typeof row[nameCol] === "string" ? row[nameCol].trim() : row[nameCol];
+    return next;
+  });
+
+  let columns = rawCols;
+  if (emailCol && !columns.includes("email")) columns = [...columns, "email"];
+  if (nameCol && !columns.includes("name")) columns = [...columns, "name"];
+
+  return { data, columns, emailCol };
+}
 
 const card = { background: "#111116", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 24, marginBottom: 16 };
 const inputS: React.CSSProperties = { width: "100%", padding: "12px 16px", background: "#18181f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, color: "#f0f0f5", fontSize: 14, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
@@ -51,44 +88,73 @@ export default function BulkEmailPage() {
   const [failedErrors, setFailedErrors] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Shared finishing step once we have plain row objects, regardless of
+  // whether they came from PapaParse (CSV/TSV) or SheetJS (Excel/ODS).
+  function processRows(rawRows: any[]) {
+    if (!rawRows.length) {
+      showToast("error", "No data found", "That file doesn't seem to contain any rows.");
+      clearCSV();
+      return;
+    }
+
+    const { data, columns, emailCol } = normalizeRecipientRows(rawRows);
+
+    if (!emailCol) {
+      showToast("error", "Missing required column", 'Add an "email" column (any capitalisation) and re-upload.');
+      clearCSV();
+      return;
+    }
+
+    // Drop blank/trailing rows (common at the end of Excel exports) and
+    // anything without a plausible email address.
+    const cleaned = data.filter((row) => typeof row.email === "string" && EMAIL_REGEX.test(row.email));
+
+    if (!cleaned.length) {
+      showToast("error", "No valid email addresses found", "Check that the email column contains valid addresses.");
+      clearCSV();
+      return;
+    }
+
+    setCsvColumns(columns);
+    setRecipients(cleaned.slice(0, 10000));
+  }
+
   function handleCSV(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setCsvFile(file.name);
-    Papa.parse(file, {
-      header: true, skipEmptyLines: true,
-      complete: (res) => {
-        const data = res.data as any[];
-        if (!data.length) return;
 
-        const rawCols = Object.keys(data[0]);
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
 
-        // Match "email" case-insensitively and ignore stray whitespace or a
-        // leading UTF-8 BOM — both are extremely common in CSVs exported
-        // from Excel/Google Sheets (e.g. "Email", "EMAIL", " email ", or a
-        // BOM-prefixed first header) and would otherwise fail this check
-        // even though a perfectly valid email column is right there.
-        const normalize = (s: string) => s.replace(/^\uFEFF/, "").trim().toLowerCase();
-        const emailCol = rawCols.find((c) => normalize(c) === "email");
+    if (DELIMITED_EXTENSIONS.has(ext)) {
+      // CSV/TSV/plain text — PapaParse auto-detects the delimiter.
+      Papa.parse(file, {
+        header: true, skipEmptyLines: true,
+        complete: (res) => processRows(res.data as any[]),
+        error: () => showToast("error", "Couldn't read file", "The CSV/TSV file appears to be corrupted."),
+      });
+      return;
+    }
 
-        if (!emailCol) {
-          showToast("error", "CSV missing a required column", 'Add an "email" column and re-upload.');
-          return;
-        }
-
-        // The rest of the app (merge tags, /api/send/bulk) expects a
-        // lowercase `email` key on every recipient object. If the actual
-        // header was e.g. "Email", copy its value onto a canonical `email`
-        // key without dropping the original — so a template still using
-        // {{Email}} keeps working too.
-        const normalizedData = emailCol === "email"
-          ? data
-          : data.map((row) => ({ ...row, email: row[emailCol] }));
-
-        setCsvColumns(rawCols.includes("email") ? rawCols : [...rawCols, "email"]);
-        setRecipients(normalizedData.slice(0, 10000));
-      },
-    });
+    // Everything else (.xlsx, .xls, .xlsm, .ods) — parse with SheetJS,
+    // reading only the first worksheet.
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const buffer = evt.target?.result;
+        const workbook = XLSX.read(buffer, { type: "array" });
+        const firstSheetName = workbook.SheetNames[0];
+        if (!firstSheetName) throw new Error("No sheets found");
+        const sheet = workbook.Sheets[firstSheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+        processRows(rows as any[]);
+      } catch {
+        showToast("error", "Couldn't read spreadsheet", "Make sure it's a valid Excel/ODS file and try again.");
+        clearCSV();
+      }
+    };
+    reader.onerror = () => showToast("error", "Couldn't read file", "There was a problem reading the file.");
+    reader.readAsArrayBuffer(file);
   }
 
   function clearCSV() { setRecipients([]); setCsvColumns([]); setCsvFile(""); setFailedErrors([]); if (fileRef.current) fileRef.current.value = ""; }
@@ -171,8 +237,8 @@ export default function BulkEmailPage() {
       <form onSubmit={handleSend}>
         {/* CSV Upload */}
         <div style={card}>
-          <label style={labelS}>Recipients CSV</label>
-          <input ref={fileRef} type="file" accept=".csv" onChange={handleCSV} style={{ display: "none" }} />
+          <label style={labelS}>Recipient List</label>
+          <input ref={fileRef} type="file" accept={SPREADSHEET_ACCEPT} onChange={handleCSV} style={{ display: "none" }} />
 
           {!recipients.length ? (
             <button type="button" onClick={() => fileRef.current?.click()}
@@ -181,8 +247,8 @@ export default function BulkEmailPage() {
               onMouseLeave={e => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}>
               <Upload size={28} color="#8888a0" />
               <div>
-                <div style={{ fontWeight: 600, fontSize: 14, color: "#f0f0f5", marginBottom: 4 }}>Click to upload CSV</div>
-                <div style={{ fontSize: 12, color: "#8888a0" }}>Must have an "email" column. Use column names as merge tags e.g. name, email.</div>
+                <div style={{ fontWeight: 600, fontSize: 14, color: "#f0f0f5", marginBottom: 4 }}>Click to upload CSV or Excel</div>
+                <div style={{ fontSize: 12, color: "#8888a0" }}>.csv, .xlsx, .xls, .ods — must have an "email" column, any capitalisation or position. Add a "name" column to personalise.</div>
               </div>
             </button>
           ) : (
@@ -329,7 +395,7 @@ export default function BulkEmailPage() {
           <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 16px", borderRadius: 12, marginBottom: 16, background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)" }}>
             <AlertTriangle size={15} color="#f59e0b" style={{ flexShrink: 0, marginTop: 1 }} />
             <p style={{ fontSize: 12, color: "#8888a0", margin: 0 }}>
-              Sending to <strong style={{ color: "#f0f0f5" }}>{recipients.length.toLocaleString()} recipients</strong>. Make sure your active provider (SES or cPanel) is verified and out of any sandbox/sending limits before a large send.
+              Sending to <strong style={{ color: "#f0f0f5" }}>{recipients.length.toLocaleString()} recipients</strong>. Make sure your active email provider is verified and out of any sandbox/sending limits before a large send.
             </p>
           </div>
         )}

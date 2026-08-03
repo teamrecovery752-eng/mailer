@@ -3,7 +3,16 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { LayoutDashboard, Send, Users, History, LogOut, ShieldCheck, Zap, Server, UserCog, Settings } from "lucide-react";
+import { LayoutDashboard, Send, Users, History, LogOut, ShieldCheck, Zap, Server, Mail, UserCog, Settings } from "lucide-react";
+
+// Single source of truth for how each mail provider is displayed, so the
+// sidebar badge (and anywhere else that reuses this) stays correct no
+// matter which provider is active — not just SES/cPanel.
+const PROVIDER_META: Record<string, { label: string; icon: any }> = {
+  SES: { label: "Amazon SES", icon: Zap },
+  CPANEL: { label: "cPanel Email", icon: Server },
+  RESEND: { label: "Resend", icon: Mail },
+};
 
 const baseNav = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Overview" },
@@ -73,12 +82,13 @@ export default function Sidebar() {
   const isAdmin = (session?.user as any)?.role === "ADMIN";
   const nav = isAdmin ? [...baseNav, ...adminNav] : baseNav;
 
-  const [provider, setProvider] = useState<"SES" | "CPANEL" | null>(null);
+  const [provider, setProvider] = useState<string | null>(null);
   useEffect(() => {
     fetch("/api/settings").then(r => r.json()).then(d => setProvider(d.active)).catch(() => {});
   }, []);
-  const providerLabel = provider === "CPANEL" ? "cPanel Email" : provider === "SES" ? "Amazon SES" : "Loading…";
-  const ProviderIcon = provider === "CPANEL" ? Server : Zap;
+  const meta = provider ? PROVIDER_META[provider] : null;
+  const providerLabel = meta?.label ?? "Loading…";
+  const ProviderIcon = meta?.icon ?? Zap;
 
   return (
     <aside style={S.aside}>

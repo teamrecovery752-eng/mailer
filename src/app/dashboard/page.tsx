@@ -5,6 +5,16 @@ import Link from "next/link";
 
 const card = { background: "#111116", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 24 };
 
+// Single source of truth for how each mail provider is displayed across the
+// dashboard, so nothing hardcodes "SES" or "cPanel" once Resend (or any
+// future provider) is the active one.
+const PROVIDER_LABELS: Record<string, string> = {
+  SES: "Amazon SES",
+  CPANEL: "cPanel Email",
+  RESEND: "Resend",
+};
+const providerLabel = (id?: string | null) => (id && PROVIDER_LABELS[id]) || "Email Provider";
+
 function StatCard({ icon: Icon, label, value, sub, color }: any) {
   return (
     <div style={card}>
@@ -52,8 +62,8 @@ export default function DashboardPage() {
             {checking
               ? "Checking connection…"
               : conn?.connected
-                ? `${conn.provider === "CPANEL" ? "cPanel Email" : "Amazon SES"} Connected`
-                : `${conn?.provider === "CPANEL" ? "cPanel Email" : "Amazon SES"} Connection Failed`}
+                ? `${providerLabel(conn?.provider)} Connected`
+                : `${providerLabel(conn?.provider)} Connection Failed`}
           </div>
           {!checking && (
             <div style={{ fontSize: 12, color: "#8888a0", marginTop: 2 }}>
@@ -74,7 +84,7 @@ export default function DashboardPage() {
         <StatCard icon={Send} label="Emails Sent" value="—" sub="Session total" color="#6366f1" />
         <StatCard icon={CheckCircle2} label="Delivered" value="—" sub="Success rate" color="#22c55e" />
         <StatCard icon={Users} label="Recipients" value="—" sub="Unique addresses" color="#f59e0b" />
-        <StatCard icon={Zap} label="SES Quota" value="—" sub="Daily limit" color="#a78bfa" />
+        <StatCard icon={Zap} label={`${providerLabel(conn?.provider)} Quota`} value="—" sub="Daily limit" color="#a78bfa" />
       </div>
 
       {/* Quick Actions */}
@@ -105,9 +115,9 @@ export default function DashboardPage() {
         <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>📋 First-time setup checklist</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {[
-            "Choose a provider (Amazon SES or cPanel Email) in Settings",
+            "Choose a provider (Amazon SES, cPanel Email, or Resend) in Settings",
             "Verify your sending domain and add DKIM/DMARC/SPF DNS records",
-            "For SES: request production access (exit SES sandbox)",
+            "For SES: request production access (exit SES sandbox). For Resend/cPanel: confirm your sending limits.",
             "Set DATABASE_URL and AUTH_SECRET in Vercel",
           ].map((item, i) => (
             <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, color: "#8888a0", fontSize: 13 }}>

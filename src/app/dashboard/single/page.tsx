@@ -95,7 +95,7 @@ export default function SingleEmailPage() {
     <div style={{ maxWidth: 720, margin: "0 auto" }}>
       <div style={{ marginBottom: 32 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Single Email</h1>
-        <p style={{ color: "#8888a0" }}>Send an email to one or multiple recipients via Amazon SES.</p>
+        <p style={{ color: "#8888a0" }}>Send an email to one or multiple recipients via your active email provider.</p>
       </div>
 
       <form onSubmit={handleSend}>
