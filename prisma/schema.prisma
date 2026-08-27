@@ -96,6 +96,18 @@ model MailSettings {
   // Resend credentials (https://resend.com/api-keys)
   resendApiKey String @default("")
 
+  // ─── Email Signature ─────────────────────────────────────────────────
+  // Appended to the htmlBody of every outgoing email (single + bulk,
+  // across every provider) when enabled. signatureHtml is always a
+  // plain HTML string regardless of how the admin built it in the UI —
+  // uploaded .html file, hand-pasted HTML, or an uploaded picture that
+  // got wrapped as a base64 data-URI <img> tag. Storing the resolved
+  // HTML (instead of the raw image bytes separately) keeps the sending
+  // logic in mailer.ts down to a single string concatenation, with no
+  // extra file/image hosting required.
+  signatureEnabled Boolean @default(false)
+  signatureHtml    String  @default("")
+
   updatedAt DateTime @updatedAt
 
   @@map("mail_settings")

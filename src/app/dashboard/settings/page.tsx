@@ -1,6 +1,6 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
-import { Loader2, CheckCircle2, XCircle, Zap, Server, Save, PlugZap, Send } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Loader2, CheckCircle2, XCircle, Zap, Server, Save, PlugZap, Send, FileCode, Code2, Image as ImageIcon, Trash2, Eye } from "lucide-react";
 import { notifyMailSettingsUpdated } from "@/lib/mailSettingsEvents";
 
 const inputS: React.CSSProperties = { width: "100%", padding: "11px 14px", background: "#18181f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, color: "#f0f0f5", fontSize: 14, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
@@ -48,6 +48,8 @@ type Settings = {
   smtpUsername: string;
   smtpPassword: string;
   resendApiKey: string;
+  signatureEnabled: boolean;
+  signatureHtml: string;
 };
 
 function Field({ label, value, onChange, type = "text", placeholder, hint }: { label: string; value: string | number; onChange: (v: string) => void; type?: string; placeholder?: string; hint?: { text: string; ok: boolean } }) {
@@ -68,6 +70,186 @@ function Field({ label, value, onChange, type = "text", placeholder, hint }: { l
         onFocus={(e) => (e.target.style.borderColor = "#6366f1")}
         onBlur={(e) => (e.target.style.borderColor = hint && !hint.ok ? "rgba(245,158,11,0.4)" : "rgba(255,255,255,0.08)")}
       />
+    </div>
+  );
+}
+
+// Three ways to arrive at the same thing — a plain HTML string saved as
+// settings.signatureHtml. Whichever tab the admin used last is just how
+// that string got built:
+//  - "file"  → reads an uploaded .html/.htm file's text content as-is.
+//  - "code"  → the textarea *is* signatureHtml, edited directly.
+//  - "image" → reads an uploaded picture as a base64 data URI and wraps
+//              it in a single <img> tag, so no separate image hosting
+//              is needed — the picture travels inside the HTML itself.
+type SigTab = "file" | "code" | "image";
+
+function SignatureSection({
+  enabled,
+  html,
+  onEnabledChange,
+  onHtmlChange,
+}: {
+  enabled: boolean;
+  html: string;
+  onEnabledChange: (v: boolean) => void;
+  onHtmlChange: (v: string) => void;
+}) {
+  const [tab, setTab] = useState<SigTab>("code");
+  const [fileName, setFileName] = useState("");
+  const [fileError, setFileError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const MAX_IMAGE_BYTES = 1.5 * 1024 * 1024; // 1.5MB, comfortably under the 2MB signature cap once base64-encoded
+
+  function handleHtmlFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+    setFileError("");
+    const reader = new FileReader();
+    reader.onload = () => {
+      onHtmlChange(String(reader.result || ""));
+      setFileName(file.name);
+    };
+    reader.onerror = () => setFileError("Couldn't read that file. Try again.");
+    reader.readAsText(file);
+  }
+
+  function handleImageFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setFileError("");
+    if (!file.type.startsWith("image/")) { setFileError("That's not an image file."); return; }
+    if (file.size > MAX_IMAGE_BYTES) { setFileError(`Image is too large (max ${(MAX_IMAGE_BYTES / (1024 * 1024)).toFixed(1)}MB) — compress it and try again.`); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || "");
+      onHtmlChange(`<img src="${dataUrl}" alt="Email signature" style="display:block;max-width:100%;height:auto;border:0;" />`);
+      setFileName(file.name);
+    };
+    reader.onerror = () => setFileError("Couldn't read that image. Try again.");
+    reader.readAsDataURL(file);
+  }
+
+  const tabs: { id: SigTab; label: string; icon: any }[] = [
+    { id: "file", label: "HTML File", icon: FileCode },
+    { id: "code", label: "HTML Code", icon: Code2 },
+    { id: "image", label: "Picture", icon: ImageIcon },
+  ];
+
+  return (
+    <div style={card}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+        <div style={{ fontWeight: 700, fontSize: 13 }}>Email Signature</div>
+
+        {/* Enable/disable toggle */}
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+          <span style={{ fontSize: 12, color: "#8888a0" }}>{enabled ? "Appended to every send" : "Off"}</span>
+          <span
+            onClick={() => onEnabledChange(!enabled)}
+            style={{ width: 34, height: 20, borderRadius: 999, background: enabled ? "#6366f1" : "rgba(255,255,255,0.12)", position: "relative", transition: "background 0.15s", flexShrink: 0 }}
+          >
+            <span style={{ position: "absolute", top: 2, left: enabled ? 16 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.15s" }} />
+          </span>
+        </label>
+      </div>
+      <p style={{ fontSize: 12, color: "#8888a0", marginBottom: 16 }}>
+        Added to the bottom of every outgoing HTML email — Single and Bulk, on any provider. Build it once here.
+      </p>
+
+      {/* Source tabs */}
+      <div style={{ display: "flex", gap: 2, padding: 3, borderRadius: 10, background: "#0c0c0f", border: "1px solid rgba(255,255,255,0.06)", marginBottom: 14, width: "fit-content" }}>
+        {tabs.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => { setTab(id); setFileError(""); }}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "6px 14px", borderRadius: 8, border: "none",
+              cursor: "pointer", fontSize: 12, fontWeight: 600,
+              fontFamily: "inherit", transition: "all 0.15s",
+              background: tab === id ? "#6366f1" : "transparent",
+              color: tab === id ? "#fff" : "#8888a0",
+            }}>
+            <Icon size={13} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "file" && (
+        <div>
+          <input ref={fileInputRef} type="file" accept=".html,.htm,text/html" onChange={handleHtmlFile} style={{ display: "none" }} />
+          <button type="button" onClick={() => fileInputRef.current?.click()}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 10, background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", color: "#6366f1", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>
+            <FileCode size={14} />
+            {fileName || "Choose an .html file…"}
+          </button>
+          <p style={{ fontSize: 12, color: "#8888a0", marginTop: 8 }}>Upload a signature exported as an HTML file — its contents are loaded below and can still be edited.</p>
+        </div>
+      )}
+
+      {tab === "image" && (
+        <div>
+          <input ref={imageInputRef} type="file" accept="image/*" onChange={handleImageFile} style={{ display: "none" }} />
+          <button type="button" onClick={() => imageInputRef.current?.click()}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 10, background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", color: "#6366f1", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>
+            <ImageIcon size={14} />
+            {fileName || "Choose an image…"}
+          </button>
+          <p style={{ fontSize: 12, color: "#8888a0", marginTop: 8 }}>Upload a signature saved as a single picture (PNG/JPG). It's embedded directly, so it displays even when recipients block external images.</p>
+        </div>
+      )}
+
+      {fileError && (
+        <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#ef4444", fontSize: 12 }}>
+          {fileError}
+        </div>
+      )}
+
+      {/* The HTML — always visible/editable regardless of how it got here */}
+      <div style={{ marginTop: tab === "code" ? 0 : 14 }}>
+        <label style={labelS}>HTML Source</label>
+        <textarea
+          value={html}
+          onChange={(e) => onHtmlChange(e.target.value)}
+          rows={7}
+          placeholder='<table>…your signature markup…</table>'
+          style={{ ...inputS, resize: "vertical", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, lineHeight: 1.6 }}
+          onFocus={(e) => (e.target.style.borderColor = "#6366f1")}
+          onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.08)")}
+        />
+        {html && (
+          <button type="button" onClick={() => { onHtmlChange(""); setFileName(""); }}
+            style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 12, color: "#8888a0", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" }}>
+            <Trash2 size={12} /> Clear signature
+          </button>
+        )}
+      </div>
+
+      {/* Live preview */}
+      <div style={{ marginTop: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+          <Eye size={13} color="#8888a0" />
+          <label style={{ ...labelS, marginBottom: 0 }}>Preview</label>
+        </div>
+        <div style={{ borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)", background: "#fff" }}>
+          {html ? (
+            <iframe
+              srcDoc={`<!DOCTYPE html><html><body style="margin:0;padding:16px;">${html}</body></html>`}
+              sandbox=""
+              style={{ width: "100%", height: 220, border: "none", display: "block" }}
+              title="Signature preview"
+            />
+          ) : (
+            <div style={{ padding: 24, textAlign: "center", fontSize: 12, color: "#aaa" }}>Nothing to preview yet.</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -317,6 +499,14 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
+
+        {/* Email signature */}
+        <SignatureSection
+          enabled={settings.signatureEnabled}
+          html={settings.signatureHtml}
+          onEnabledChange={(v) => update("signatureEnabled", v)}
+          onHtmlChange={(v) => update("signatureHtml", v)}
+        />
 
         {message && (
           <div style={{ padding: "10px 14px", borderRadius: 8, fontSize: 13, background: message.type === "ok" ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)", border: `1px solid ${message.type === "ok" ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)"}`, color: message.type === "ok" ? "#22c55e" : "#ef4444" }}>

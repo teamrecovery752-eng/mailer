@@ -14,6 +14,8 @@ export interface ResolvedMailSettings {
   smtpUsername: string;
   smtpPassword: string;
   resendApiKey: string;
+  signatureEnabled: boolean;
+  signatureHtml: string;
 }
 
 // There should only ever be one MailSettings document. This finds it,

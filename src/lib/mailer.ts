@@ -1,4 +1,5 @@
 import { getMailSettings } from "@/lib/mailSettings";
+import type { ResolvedMailSettings } from "@/lib/mailSettings";
 import { sesAdapter } from "@/lib/providers/ses";
 import { cpanelAdapter } from "@/lib/providers/cpanel";
 import { resendAdapter } from "@/lib/providers/resend";
@@ -12,10 +13,29 @@ function adapterFor(provider: "SES" | "CPANEL" | "RESEND") {
   return sesAdapter;
 }
 
+// Appends the saved signature (built in Settings from an uploaded .html
+// file, pasted HTML code, or an uploaded picture — all resolve down to
+// the same signatureHtml string) to an outgoing htmlBody. Runs here, in
+// the one place both single and bulk sends funnel through, so every
+// provider and every compose screen gets it automatically with no
+// per-page wiring. No-ops when the signature is off, empty, or the
+// email has no HTML part (plain-text-only sends are left alone).
+function withSignature(htmlBody: string | undefined, settings: ResolvedMailSettings): string | undefined {
+  if (!htmlBody || !settings.signatureEnabled || !settings.signatureHtml.trim()) return htmlBody;
+
+  const block = `<div style="margin-top:32px">${settings.signatureHtml}</div>`;
+  // Insert just before </body> when present so it stays inside the
+  // document instead of trailing after a closing </html> tag; otherwise
+  // (fragment-style bodies with no <html>/<body> wrapper) just append.
+  return /<\/body>/i.test(htmlBody)
+    ? htmlBody.replace(/<\/body>/i, `${block}</body>`)
+    : `${htmlBody}${block}`;
+}
+
 export async function sendSingleEmail(params: SingleEmailParams) {
   const settings = await getMailSettings();
   const adapter = adapterFor(settings.active);
-  return adapter.sendSingleEmail(settings, params);
+  return adapter.sendSingleEmail(settings, { ...params, htmlBody: withSignature(params.htmlBody, settings) });
 }
 
 export async function testConnection(): Promise<ConnectionTestResult & { provider: string; fromEmail: string }> {
@@ -48,6 +68,10 @@ export async function sendBulkEmails(
   const adapter = adapterFor(settings.active);
   const results = { sent: 0, failed: 0, errors: [] as string[] };
 
+  // Apply once, before personalisation — the signature has no merge tags,
+  // so there's no reason to append it separately per recipient.
+  const htmlTemplate = withSignature(template.htmlBody, settings);
+
   // Providers with a native batch-send endpoint (currently Resend) deliver
   // the whole campaign in a handful of API calls instead of one call per
   // recipient — far less likely to trip a requests-per-second rate limit.
@@ -55,7 +79,7 @@ export async function sendBulkEmails(
     const items = recipients.map((r) => ({
       to: r.email,
       subject,
-      ...(template.htmlBody && { htmlBody: personalise(template.htmlBody, r) }),
+      ...(htmlTemplate && { htmlBody: personalise(htmlTemplate, r) }),
       ...(template.textBody && { textBody: personalise(template.textBody, r) }),
     }));
 
@@ -84,7 +108,7 @@ export async function sendBulkEmails(
       await adapter.sendSingleEmail(settings, {
         to: recipient.email,
         subject,
-        ...(template.htmlBody && { htmlBody: personalise(template.htmlBody, recipient) }),
+        ...(htmlTemplate && { htmlBody: personalise(htmlTemplate, recipient) }),
         ...(template.textBody && { textBody: personalise(template.textBody, recipient) }),
       });
       results.sent++;

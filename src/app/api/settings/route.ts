@@ -67,7 +67,22 @@ export async function PUT(req: NextRequest) {
       smtpPassword: trim(cleanSecret(body.smtpPassword, current.smtpPassword), current.smtpPassword),
 
       resendApiKey: trim(cleanSecret(body.resendApiKey, current.resendApiKey), current.resendApiKey),
+
+      signatureEnabled: typeof body.signatureEnabled === "boolean" ? body.signatureEnabled : current.signatureEnabled,
+      signatureHtml: typeof body.signatureHtml === "string" ? body.signatureHtml : current.signatureHtml,
     } as const;
+
+    // A signature built from an embedded picture (base64 data URI) can get
+    // large fast. Cap it well under MongoDB's 16MB document limit so a big
+    // image upload fails fast with a clear message instead of a mysterious
+    // 500 on save.
+    const MAX_SIGNATURE_BYTES = 2 * 1024 * 1024; // 2MB
+    if (Buffer.byteLength(data.signatureHtml, "utf8") > MAX_SIGNATURE_BYTES) {
+      return NextResponse.json(
+        { error: "Signature is too large (max 2MB). Try a smaller or more compressed image." },
+        { status: 400 }
+      );
+    }
 
     // Refuse to save/activate a provider that's missing required
     // credentials — this is what used to let a half-configured provider
