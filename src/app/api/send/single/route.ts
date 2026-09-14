@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { sendSingleEmail } from "@/lib/mailer";
+import { resolveDomain } from "@/lib/domains";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
@@ -8,7 +9,7 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const { to, subject, htmlBody, textBody, replyTo } = await req.json();
+    const { to, subject, htmlBody, textBody, replyTo, domainId } = await req.json();
 
     if (!to || !subject || (!htmlBody && !textBody))
       return NextResponse.json({ error: "Missing required fields: to, subject, and htmlBody or textBody" }, { status: 400 });
@@ -19,7 +20,8 @@ export async function POST(req: NextRequest) {
     if (invalid.length > 0)
       return NextResponse.json({ error: `Invalid emails: ${invalid.join(", ")}` }, { status: 400 });
 
-    const result = await sendSingleEmail({ to, subject, htmlBody, textBody, replyTo });
+    const domain = await resolveDomain(domainId);
+    const result = await sendSingleEmail({ to, subject, htmlBody, textBody, replyTo, domainId: domain.id });
 
     // Log to MongoDB
     await prisma.emailLog.create({
@@ -32,6 +34,8 @@ export async function POST(req: NextRequest) {
         totalSent: emails.length,
         totalFailed: 0,
         messageId: result.messageId,
+        domainId: domain.id,
+        domainLabel: domain.label,
       },
     });
 

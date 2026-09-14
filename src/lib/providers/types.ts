@@ -1,4 +1,4 @@
-import type { ResolvedMailSettings } from "@/lib/mailSettings";
+import type { ResolvedDomain } from "@/lib/domains";
 
 export interface SingleEmailParams {
   to: string | string[];
@@ -25,8 +25,8 @@ export interface ConnectionTestResult {
 }
 
 export interface MailProviderAdapter {
-  sendSingleEmail(settings: ResolvedMailSettings, params: SingleEmailParams): Promise<SendResult>;
-  testConnection(settings: ResolvedMailSettings): Promise<ConnectionTestResult>;
+  sendSingleEmail(settings: ResolvedDomain, params: SingleEmailParams): Promise<SendResult>;
+  testConnection(settings: ResolvedDomain): Promise<ConnectionTestResult>;
 
   // Optional: providers with a native multi-recipient batch endpoint (e.g.
   // Resend's POST /emails/batch, up to 100 emails per call) can implement
@@ -35,7 +35,7 @@ export interface MailProviderAdapter {
   // trip a requests-per-second rate limit. Adapters without a batch
   // endpoint (SES, cPanel/SMTP) simply omit it, and sendBulkEmails() in
   // lib/mailer.ts falls back to a paced, retrying per-recipient loop.
-  sendBulk?(settings: ResolvedMailSettings, items: BulkSendItem[]): Promise<BulkSendItemResult[]>;
+  sendBulk?(settings: ResolvedDomain, items: BulkSendItem[]): Promise<BulkSendItemResult[]>;
 }
 
 export interface BulkSendItem {

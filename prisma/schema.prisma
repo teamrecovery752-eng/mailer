@@ -57,10 +57,16 @@ model EmailLog {
   messageId   String?     // SES message ID (single emails)
   sentAt      DateTime    @default(now())
 
+  // Which domain/brand this was sent through. Denormalized as a plain
+  // label (not a relation) so history stays readable even if the domain
+  // is later renamed or deleted.
+  domainId    String?
+  domainLabel String?
+
   @@map("email_logs")
 }
 
-// ─── Mail Provider Settings ────────────────────────────────────────────────
+// ─── Domains ────────────────────────────────────────────────────────────────
 
 enum MailProvider {
   SES
@@ -68,17 +74,27 @@ enum MailProvider {
   RESEND
 }
 
-// Singleton document (one row) holding the active provider + credentials
-// for every supported email backend. Only ADMIN users may read/write this
-// via /api/settings. Whichever provider is `active` is used by
-// src/lib/mailer.ts for every outgoing email.
-model MailSettings {
-  id     String       @id @default(auto()) @map("_id") @db.ObjectId
+// One document per sending domain/brand the admin has configured. Each
+// domain carries its own mail-provider credentials AND its own branding,
+// so the whole system (Single Email, Bulk Email, and every marketing
+// template) can be pointed at any configured domain and have both the
+// "how it sends" and "what it says" follow automatically. Managed via
+// /api/domains by ADMIN users only. Exactly one domain should have
+// isDefault = true at any time — that's what's used when a send doesn't
+// explicitly specify a domainId.
+model Domain {
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
+  label     String       // display name, e.g. "Recoverlance"
+  domain    String       @unique // e.g. "recoverlance.com"
+  isDefault Boolean      @default(false)
+  isActive  Boolean      @default(true) // disable without deleting
+
   active MailProvider @default(SES)
 
-  // Shared "from" identity, used by whichever provider is active
+  // Sender identity used by whichever provider is active for this domain
   fromName  String @default("")
   fromEmail String @default("")
+  replyTo   String @default("")
 
   // Amazon SES credentials
   sesRegion          String @default("us-east-1")
@@ -96,19 +112,29 @@ model MailSettings {
   // Resend credentials (https://resend.com/api-keys)
   resendApiKey String @default("")
 
+  // ─── Branding ──────────────────────────────────────────────────────
+  // Resolved into {{companyName}}, {{website}}, {{contactUrl}}, {{address}},
+  // {{accentColor}}, {{unsubscribeText}} merge tags by lib/mailer.ts before
+  // every send, so every template (built-in or custom) automatically
+  // reflects whichever domain is selected instead of hardcoding one brand.
+  companyName     String @default("")
+  website         String @default("")
+  contactUrl      String @default("")
+  address         String @default("")
+  accentColor     String @default("#6366f1")
+  unsubscribeText String @default("Reply STOP to unsubscribe")
+
   // ─── Email Signature ─────────────────────────────────────────────────
-  // Appended to the htmlBody of every outgoing email (single + bulk,
-  // across every provider) when enabled. signatureHtml is always a
-  // plain HTML string regardless of how the admin built it in the UI —
-  // uploaded .html file, hand-pasted HTML, or an uploaded picture that
-  // got wrapped as a base64 data-URI <img> tag. Storing the resolved
-  // HTML (instead of the raw image bytes separately) keeps the sending
-  // logic in mailer.ts down to a single string concatenation, with no
-  // extra file/image hosting required.
+  // Appended to the htmlBody of every outgoing email sent through this
+  // domain (single + bulk, across every provider) when enabled.
+  // signatureHtml is always a plain HTML string regardless of how the
+  // admin built it in the UI — uploaded .html file, hand-pasted HTML, or
+  // an uploaded picture wrapped as a base64 data-URI <img> tag.
   signatureEnabled Boolean @default(false)
   signatureHtml    String  @default("")
 
+  createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@map("mail_settings")
+  @@map("domains")
 }

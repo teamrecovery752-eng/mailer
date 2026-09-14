@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { LayoutDashboard, Send, Users, History, LogOut, ShieldCheck, Zap, Server, Mail, UserCog, Settings } from "lucide-react";
-import { MAIL_SETTINGS_UPDATED_EVENT } from "@/lib/mailSettingsEvents";
+import { DOMAINS_UPDATED_EVENT } from "@/lib/domainEvents";
 
 // Single source of truth for how each mail provider is displayed, so the
 // sidebar badge (and anywhere else that reuses this) stays correct no
@@ -83,17 +83,23 @@ export default function Sidebar() {
   const isAdmin = (session?.user as any)?.role === "ADMIN";
   const nav = isAdmin ? [...baseNav, ...adminNav] : baseNav;
 
-  const [provider, setProvider] = useState<string | null>(null);
+  const [defaultDomain, setDefaultDomain] = useState<{ label: string; active: string } | null>(null);
   useEffect(() => {
-    const load = () => fetch("/api/settings").then(r => r.json()).then(d => setProvider(d.active)).catch(() => {});
+    const load = () => fetch("/api/domains")
+      .then(r => r.json())
+      .then((list: any[]) => {
+        const def = Array.isArray(list) ? (list.find(d => d.isDefault) || list[0]) : null;
+        setDefaultDomain(def ? { label: def.label, active: def.active } : null);
+      })
+      .catch(() => {});
     load();
-    // Refetch the moment Settings saves a new active provider, instead of
+    // Refetch the moment Settings saves domain changes, instead of
     // requiring a manual page refresh to see the badge update.
-    window.addEventListener(MAIL_SETTINGS_UPDATED_EVENT, load);
-    return () => window.removeEventListener(MAIL_SETTINGS_UPDATED_EVENT, load);
+    window.addEventListener(DOMAINS_UPDATED_EVENT, load);
+    return () => window.removeEventListener(DOMAINS_UPDATED_EVENT, load);
   }, []);
-  const meta = provider ? PROVIDER_META[provider] : null;
-  const providerLabel = meta?.label ?? "Loading…";
+  const meta = defaultDomain ? PROVIDER_META[defaultDomain.active] : null;
+  const providerLabel = defaultDomain ? `${defaultDomain.label} · ${meta?.label ?? defaultDomain.active}` : "No domain set up";
   const ProviderIcon = meta?.icon ?? Zap;
 
   return (

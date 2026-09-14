@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Send, Users, CheckCircle2, XCircle, Activity, ArrowRight, TrendingUp } from "lucide-react";
 import Link from "next/link";
-import { MAIL_SETTINGS_UPDATED_EVENT } from "@/lib/mailSettingsEvents";
+import { DOMAINS_UPDATED_EVENT } from "@/lib/domainEvents";
 
 const card = { background: "#111116", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 24 };
 
@@ -56,8 +56,8 @@ export default function DashboardPage() {
     // Switching providers in Settings changes what "connected" means here
     // (and the fromEmail shown), so re-check immediately instead of
     // requiring a page refresh to see the new status.
-    window.addEventListener(MAIL_SETTINGS_UPDATED_EVENT, checkConnection);
-    return () => window.removeEventListener(MAIL_SETTINGS_UPDATED_EVENT, checkConnection);
+    window.addEventListener(DOMAINS_UPDATED_EVENT, checkConnection);
+    return () => window.removeEventListener(DOMAINS_UPDATED_EVENT, checkConnection);
   }, [checkConnection, loadStats]);
 
   const borderColor = checking ? "rgba(255,255,255,0.06)" : conn?.connected ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)";
@@ -83,8 +83,8 @@ export default function DashboardPage() {
             {checking
               ? "Checking connection…"
               : conn?.connected
-                ? `${providerLabel(conn?.provider)} Connected`
-                : `${providerLabel(conn?.provider)} Connection Failed`}
+                ? `${conn?.domainLabel ? conn.domainLabel + " — " : ""}${providerLabel(conn?.provider)} Connected`
+                : `${conn?.domainLabel ? conn.domainLabel + " — " : ""}${providerLabel(conn?.provider)} Connection Failed`}
           </div>
           {!checking && (
             <div style={{ fontSize: 12, color: "#8888a0", marginTop: 2 }}>
@@ -136,7 +136,7 @@ export default function DashboardPage() {
         <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>📋 First-time setup checklist</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {[
-            "Choose a provider (Amazon SES, cPanel Email, or Resend) in Settings",
+            "Add a sending domain (label, provider, branding) in Settings — add more anytime for other brands",
             "Verify your sending domain and add DKIM/DMARC/SPF DNS records",
             "For SES: request production access (exit SES sandbox). For Resend/cPanel: confirm your sending limits.",
             "Set DATABASE_URL and AUTH_SECRET in Vercel",

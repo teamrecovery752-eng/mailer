@@ -1,12 +1,12 @@
 import { Resend } from "resend";
-import type { ResolvedMailSettings } from "@/lib/mailSettings";
+import type { ResolvedDomain } from "@/lib/domains";
 import type { MailProviderAdapter, SingleEmailParams, SendResult, ConnectionTestResult, BulkSendItem, BulkSendItemResult } from "./types";
 
-function buildClient(settings: ResolvedMailSettings) {
+function buildClient(settings: ResolvedDomain) {
   return new Resend(settings.resendApiKey);
 }
 
-async function sendSingleEmail(settings: ResolvedMailSettings, params: SingleEmailParams): Promise<SendResult> {
+async function sendSingleEmail(settings: ResolvedDomain, params: SingleEmailParams): Promise<SendResult> {
   const client = buildClient(settings);
   const toAddresses = Array.isArray(params.to) ? params.to : [params.to];
 
@@ -63,7 +63,7 @@ const MAX_BATCH_RETRIES = 4;
 // rate limit than the old per-recipient loop, and much faster for large
 // sends. On a 429, each chunk is retried with backoff before being marked
 // failed.
-async function sendBulk(settings: ResolvedMailSettings, items: BulkSendItem[]): Promise<BulkSendItemResult[]> {
+async function sendBulk(settings: ResolvedDomain, items: BulkSendItem[]): Promise<BulkSendItemResult[]> {
   const client = buildClient(settings);
   const results: BulkSendItemResult[] = new Array(items.length);
   const from = `${settings.fromName} <${settings.fromEmail}>`;
@@ -118,7 +118,7 @@ async function sendBulk(settings: ResolvedMailSettings, items: BulkSendItem[]): 
   return results;
 }
 
-async function testConnection(settings: ResolvedMailSettings): Promise<ConnectionTestResult> {
+async function testConnection(settings: ResolvedDomain): Promise<ConnectionTestResult> {
   if (!settings.resendApiKey) {
     return { connected: false, error: "Missing Resend API key." };
   }

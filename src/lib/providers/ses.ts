@@ -1,8 +1,8 @@
 import { SESClient, SendEmailCommand, GetAccountSendingEnabledCommand } from "@aws-sdk/client-ses";
-import type { ResolvedMailSettings } from "@/lib/mailSettings";
+import type { ResolvedDomain } from "@/lib/domains";
 import type { MailProviderAdapter, SingleEmailParams, SendResult, ConnectionTestResult } from "./types";
 
-function buildClient(settings: ResolvedMailSettings) {
+function buildClient(settings: ResolvedDomain) {
   return new SESClient({
     region: settings.sesRegion || "us-east-1",
     credentials: {
@@ -12,7 +12,7 @@ function buildClient(settings: ResolvedMailSettings) {
   });
 }
 
-async function sendSingleEmail(settings: ResolvedMailSettings, params: SingleEmailParams): Promise<SendResult> {
+async function sendSingleEmail(settings: ResolvedDomain, params: SingleEmailParams): Promise<SendResult> {
   const toAddresses = Array.isArray(params.to) ? params.to : [params.to];
   const client = buildClient(settings);
 
@@ -33,7 +33,7 @@ async function sendSingleEmail(settings: ResolvedMailSettings, params: SingleEma
   return { messageId: result.MessageId };
 }
 
-async function testConnection(settings: ResolvedMailSettings): Promise<ConnectionTestResult> {
+async function testConnection(settings: ResolvedDomain): Promise<ConnectionTestResult> {
   try {
     const client = buildClient(settings);
     const result = await client.send(new GetAccountSendingEnabledCommand({}));

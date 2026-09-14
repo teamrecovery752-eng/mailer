@@ -1,11 +1,11 @@
 import nodemailer from "nodemailer";
-import type { ResolvedMailSettings } from "@/lib/mailSettings";
+import type { ResolvedDomain } from "@/lib/domains";
 import type { MailProviderAdapter, SingleEmailParams, SendResult, ConnectionTestResult } from "./types";
 
 // cPanel-hosted mailboxes are just standard SMTP accounts, so this works for
 // any cPanel email (e.g. mail.yourdomain.com, port 465 SSL or 587 STARTTLS)
 // as well as any other plain SMTP provider.
-function buildTransport(settings: ResolvedMailSettings) {
+function buildTransport(settings: ResolvedDomain) {
   return nodemailer.createTransport({
     host: settings.smtpHost,
     port: settings.smtpPort || 465,
@@ -17,7 +17,7 @@ function buildTransport(settings: ResolvedMailSettings) {
   });
 }
 
-async function sendSingleEmail(settings: ResolvedMailSettings, params: SingleEmailParams): Promise<SendResult> {
+async function sendSingleEmail(settings: ResolvedDomain, params: SingleEmailParams): Promise<SendResult> {
   const transport = buildTransport(settings);
   const toAddresses = Array.isArray(params.to) ? params.to.join(", ") : params.to;
 
@@ -33,7 +33,7 @@ async function sendSingleEmail(settings: ResolvedMailSettings, params: SingleEma
   return { messageId: info.messageId };
 }
 
-async function testConnection(settings: ResolvedMailSettings): Promise<ConnectionTestResult> {
+async function testConnection(settings: ResolvedDomain): Promise<ConnectionTestResult> {
   try {
     const transport = buildTransport(settings);
     await transport.verify();

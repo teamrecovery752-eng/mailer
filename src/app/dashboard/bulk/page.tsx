@@ -1,10 +1,11 @@
 "use client";
-import { useState, useRef } from "react";
-import { Upload, Send, Loader2, FileText, X, AlertTriangle, Code2, AlignLeft, LayoutTemplate, Check } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Upload, Send, Loader2, FileText, X, AlertTriangle, Code2, AlignLeft, LayoutTemplate, Check, Globe } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { marketingTemplates } from "@/lib/marketingTemplates";
 import { useToast } from "@/components/Toast";
+import { DOMAINS_UPDATED_EVENT } from "@/lib/domainEvents";
 
 // Spreadsheet file extensions accepted by the recipient uploader.
 const SPREADSHEET_ACCEPT = ".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.ods";
@@ -52,26 +53,26 @@ body{font-family:Arial,sans-serif;background:#f5f5f5;margin:0;padding:40px 20px}
 .card{background:#fff;border-radius:12px;padding:40px;max-width:560px;margin:0 auto}
 h1{color:#111;font-size:22px;margin-bottom:16px}
 p{color:#555;line-height:1.7;margin-bottom:16px}
-.btn{display:inline-block;background:#00d4ff;color:#0a0f1e;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700}
+.btn{display:inline-block;background:{{accentColor}};color:#0a0f1e;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700}
 .footer{text-align:center;margin-top:32px;font-size:12px;color:#999}
 </style></head>
 <body><div class="card">
 <h1>Hi {{name}},</h1>
-<p>We help victims of stolen crypto, lost wallet passwords, and investment scams recover their digital assets.</p>
-<a href="https://recoverlance.com/contact" class="btn">Submit a Free Case Assessment</a>
-<div class="footer">Recoverlance · 2300 Stockton St, San Francisco, CA 94133<br><a href="#">Unsubscribe</a></div>
+<p>Your message goes here.</p>
+<a href="{{contactUrl}}" class="btn">Submit a Free Case Assessment</a>
+<div class="footer">{{companyName}} · {{address}}<br><a href="{{contactUrl}}">{{unsubscribeText}}</a></div>
 </div></body></html>`;
 
 const defaultText = `Hi {{name}},
 
-We help victims of stolen crypto, lost wallet passwords, and investment scams recover their digital assets.
+Your message goes here.
 
 Submit a free case assessment:
-https://recoverlance.com/contact
+{{contactUrl}}
 
 —
-Recoverlance
-2300 Stockton St, San Francisco, CA 94133`;
+{{companyName}}
+{{address}}`;
 
 type Mode = "html" | "text";
 
@@ -87,6 +88,28 @@ export default function BulkEmailPage() {
   const [sending, setSending] = useState(false);
   const [failedErrors, setFailedErrors] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [domains, setDomains] = useState<{ id: string; label: string; domain: string; isDefault: boolean; isActive: boolean }[]>([]);
+  const [domainId, setDomainId] = useState<string>("");
+
+  const loadDomains = useCallback(() => {
+    fetch("/api/domains")
+      .then(r => r.json())
+      .then((list: any[]) => {
+        if (!Array.isArray(list)) return;
+        setDomains(list);
+        setDomainId(prev => {
+          if (prev && list.some(d => d.id === prev)) return prev;
+          return (list.find(d => d.isDefault) || list[0])?.id || "";
+        });
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadDomains();
+    window.addEventListener(DOMAINS_UPDATED_EVENT, loadDomains);
+    return () => window.removeEventListener(DOMAINS_UPDATED_EVENT, loadDomains);
+  }, [loadDomains]);
 
   // Shared finishing step once we have plain row objects, regardless of
   // whether they came from PapaParse (CSV/TSV) or SheetJS (Excel/ODS).
@@ -193,6 +216,7 @@ export default function BulkEmailPage() {
     const payload = {
       recipients,
       subject,
+      domainId: domainId || undefined,
       // send as htmlBody or textBody depending on mode — mirrors Single Email behaviour
       ...(mode === "html" ? { htmlBody: body } : { textBody: body, htmlBody: `<pre style="font-family:inherit;white-space:pre-wrap">${body}</pre>` }),
     };
@@ -235,6 +259,33 @@ export default function BulkEmailPage() {
       </div>
 
       <form onSubmit={handleSend}>
+        {/* Send From — which configured domain/brand this campaign goes out as */}
+        <div style={card}>
+          <label style={labelS}>Send From</label>
+          {domains.length === 0 ? (
+            <div style={{ fontSize: 13, color: "#f59e0b" }}>
+              No sending domain configured yet — add one in <a href="/dashboard/settings" style={{ color: "#6366f1" }}>Settings</a>.
+            </div>
+          ) : (
+            <div style={{ position: "relative" }}>
+              <Globe size={15} color="#8888a0" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+              <select value={domainId} onChange={e => setDomainId(e.target.value)}
+                style={{ ...inputS, paddingLeft: 38, cursor: "pointer" }}
+                onFocus={e => (e.target.style.borderColor = "#6366f1")}
+                onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.08)")}>
+                {domains.map(d => (
+                  <option key={d.id} value={d.id} style={{ background: "#18181f" }} disabled={!d.isActive}>
+                    {d.label} — {d.domain}{d.isDefault ? " (default)" : ""}{!d.isActive ? " — disabled" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <p style={{ fontSize: 12, color: "#8888a0", marginTop: 8 }}>
+            Sets the sending mailbox and fills {"{{companyName}}"}, {"{{contactUrl}}"}, {"{{address}}"} etc. in your template.
+          </p>
+        </div>
+
         {/* CSV Upload */}
         <div style={card}>
           <label style={labelS}>Recipient List</label>
@@ -374,7 +425,7 @@ export default function BulkEmailPage() {
           <textarea value={body} onChange={e => { setBody(e.target.value); setActiveTemplateId(null); }} required rows={16}
             placeholder={mode === "html"
               ? "Paste your HTML template, or pick one from Marketing Templates above..."
-              : "Hi {{name}},\n\nYour message here...\n\n—\nRecoverlance"}
+              : "Hi {{name}},\n\nYour message here...\n\n—\n{{companyName}}"}
             style={{ ...inputS, resize: "vertical", minHeight: 300, fontFamily: mode === "html" ? "'JetBrains Mono', monospace" : "inherit", fontSize: mode === "html" ? 12 : 14, lineHeight: 1.6 }}
             onFocus={e => (e.target.style.borderColor = "#6366f1")} onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.08)")} />
 

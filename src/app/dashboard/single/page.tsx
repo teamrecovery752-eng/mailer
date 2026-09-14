@@ -1,11 +1,14 @@
 "use client";
-import { useState } from "react";
-import { Send, Loader2, Plus, X, Code2, AlignLeft } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Send, Loader2, Plus, X, Code2, AlignLeft, Globe } from "lucide-react";
 import { useToast } from "@/components/Toast";
+import { DOMAINS_UPDATED_EVENT } from "@/lib/domainEvents";
 
 const card = { background: "#111116", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 24, marginBottom: 16 };
 const inputS: React.CSSProperties = { width: "100%", padding: "12px 16px", background: "#18181f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, color: "#f0f0f5", fontSize: 14, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
 const labelS: React.CSSProperties = { display: "block", marginBottom: 8, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "#8888a0" };
+
+type DomainOption = { id: string; label: string; domain: string; isDefault: boolean; isActive: boolean };
 
 const htmlTemplate = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
@@ -13,14 +16,14 @@ body{font-family:Arial,sans-serif;background:#f5f5f5;margin:0;padding:40px 20px}
 .card{background:#fff;border-radius:12px;padding:40px;max-width:560px;margin:0 auto}
 h1{color:#111;font-size:24px;margin-bottom:16px}
 p{color:#555;line-height:1.7;margin-bottom:16px}
-.btn{display:inline-block;background:#6366f1;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600}
+.btn{display:inline-block;background:{{accentColor}};color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600}
 .footer{text-align:center;margin-top:32px;font-size:12px;color:#999}
 </style></head>
 <body><div class="card">
 <h1>Hello {{name}},</h1>
 <p>Your message goes here.</p>
-<a href="https://recoverlance.com/contact" class="btn">Submit a Case</a>
-<div class="footer">Recoverlance · 2300 Stockton St, San Francisco, CA 94133</div>
+<a href="{{contactUrl}}" class="btn">Submit a Case</a>
+<div class="footer">{{companyName}} · {{address}}</div>
 </div></body></html>`;
 
 const textTemplate = `Hello {{name}},
@@ -28,12 +31,11 @@ const textTemplate = `Hello {{name}},
 Your message goes here.
 
 To submit a case, visit:
-https://recoverlance.com/contact
+{{contactUrl}}
 
 ---
-Recoverlance
-2300 Stockton St, San Francisco, CA 94133
-hello@recoverlance.com`;
+{{companyName}}
+{{address}}`;
 
 type Mode = "html" | "text";
 
@@ -46,6 +48,28 @@ export default function SingleEmailPage() {
   const [mode, setMode] = useState<Mode>("text");
   const [replyTo, setReplyTo] = useState("");
   const [sending, setSending] = useState(false);
+  const [domains, setDomains] = useState<DomainOption[]>([]);
+  const [domainId, setDomainId] = useState<string>("");
+
+  const loadDomains = useCallback(() => {
+    fetch("/api/domains")
+      .then(r => r.json())
+      .then((list: DomainOption[]) => {
+        if (!Array.isArray(list)) return;
+        setDomains(list);
+        setDomainId(prev => {
+          if (prev && list.some(d => d.id === prev)) return prev;
+          return (list.find(d => d.isDefault) || list[0])?.id || "";
+        });
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadDomains();
+    window.addEventListener(DOMAINS_UPDATED_EVENT, loadDomains);
+    return () => window.removeEventListener(DOMAINS_UPDATED_EVENT, loadDomains);
+  }, [loadDomains]);
 
   function addRecipient() {
     const t = to.trim();
@@ -67,6 +91,7 @@ export default function SingleEmailPage() {
       to: recipients,
       subject,
       replyTo: replyTo || undefined,
+      domainId: domainId || undefined,
       // send as htmlBody or textBody depending on mode
       ...(mode === "html" ? { htmlBody: body } : { textBody: body, htmlBody: `<pre style="font-family:inherit;white-space:pre-wrap">${body}</pre>` }),
     };
@@ -99,6 +124,30 @@ export default function SingleEmailPage() {
       </div>
 
       <form onSubmit={handleSend}>
+        {/* Send From — which configured domain/brand this goes out as */}
+        <div style={card}>
+          <label style={labelS}>Send From</label>
+          {domains.length === 0 ? (
+            <div style={{ fontSize: 13, color: "#f59e0b" }}>
+              No sending domain configured yet — add one in <a href="/dashboard/settings" style={{ color: "#6366f1" }}>Settings</a>.
+            </div>
+          ) : (
+            <div style={{ position: "relative" }}>
+              <Globe size={15} color="#8888a0" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+              <select value={domainId} onChange={e => setDomainId(e.target.value)}
+                style={{ ...inputS, paddingLeft: 38, cursor: "pointer" }}
+                onFocus={e => (e.target.style.borderColor = "#6366f1")}
+                onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.08)")}>
+                {domains.map(d => (
+                  <option key={d.id} value={d.id} style={{ background: "#18181f" }} disabled={!d.isActive}>
+                    {d.label} — {d.domain}{d.isDefault ? " (default)" : ""}{!d.isActive ? " — disabled" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
         {/* Recipients */}
         <div style={card}>
           <label style={labelS}>Recipients</label>
@@ -191,7 +240,7 @@ export default function SingleEmailPage() {
             rows={16}
             placeholder={mode === "html"
               ? "<!DOCTYPE html>\n<html>...</html>"
-              : "Hi {{name}},\n\nYour message here...\n\n—\nRecoverlance"}
+              : "Hi {{name}},\n\nYour message here...\n\n—\n{{companyName}}"}
             style={{
               ...inputS,
               resize: "vertical",
@@ -221,7 +270,7 @@ export default function SingleEmailPage() {
         <div style={card}>
           <label style={labelS}>Reply-To (optional)</label>
           <input value={replyTo} onChange={e => setReplyTo(e.target.value)} type="email"
-            placeholder="replies@recoverlance.com" style={inputS}
+            placeholder="replies@yourdomain.com" style={inputS}
             onFocus={e => (e.target.style.borderColor = "#6366f1")}
             onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.08)")} />
         </div>

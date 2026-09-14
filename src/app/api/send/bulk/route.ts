@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { sendBulkEmails } from "@/lib/mailer";
+import { resolveDomain } from "@/lib/domains";
 import { prisma } from "@/lib/prisma";
 
 // Bulk campaigns can take a while even when paced/batched correctly.
@@ -13,7 +14,7 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const { recipients, subject, htmlBody, textBody } = await req.json();
+    const { recipients, subject, htmlBody, textBody, domainId } = await req.json();
 
     if (!recipients?.length || !subject || (!htmlBody && !textBody))
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -21,7 +22,8 @@ export async function POST(req: NextRequest) {
     if (recipients.length > 10000)
       return NextResponse.json({ error: "Maximum 10,000 recipients per batch" }, { status: 400 });
 
-    const results = await sendBulkEmails(recipients, subject, { htmlBody, textBody });
+    const domain = await resolveDomain(domainId);
+    const results = await sendBulkEmails(recipients, subject, { htmlBody, textBody }, undefined, domain.id);
 
     const status = results.failed === 0 ? "SUCCESS" : results.sent === 0 ? "FAILED" : "PARTIAL";
 
@@ -36,6 +38,8 @@ export async function POST(req: NextRequest) {
         totalSent: results.sent,
         totalFailed: results.failed,
         errors: results.errors.slice(0, 50), // cap stored errors
+        domainId: domain.id,
+        domainLabel: domain.label,
       },
     });
 

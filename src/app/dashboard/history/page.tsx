@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Send, Users, CheckCircle2, XCircle, AlertTriangle, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 
-type Log = { id: string; type: "SINGLE"|"BULK"; status: "SUCCESS"|"PARTIAL"|"FAILED"; subject: string; recipients: string[]; totalSent: number; totalFailed: number; errors: string[]; messageId?: string; sentAt: string; user: { name: string; email: string }; };
+type Log = { id: string; type: "SINGLE"|"BULK"; status: "SUCCESS"|"PARTIAL"|"FAILED"; subject: string; recipients: string[]; totalSent: number; totalFailed: number; errors: string[]; messageId?: string; sentAt: string; user: { name: string; email: string }; domainLabel?: string | null; };
 
 const statusColor = { SUCCESS: "#22c55e", PARTIAL: "#f59e0b", FAILED: "#ef4444" };
 const statusBg = { SUCCESS: "rgba(34,197,94,0.08)", PARTIAL: "rgba(245,158,11,0.08)", FAILED: "rgba(239,68,68,0.08)" };
@@ -62,18 +62,19 @@ export default function HistoryPage() {
               <th style={{ ...thS, width: 70 }}>Type</th>
               <th style={{ ...thS, width: 80, textAlign: "center" }}>Sent</th>
               <th style={{ ...thS, width: 100 }}>Status</th>
+              <th style={{ ...thS, width: 120 }}>Domain</th>
               <th style={{ ...thS, width: 120 }}>Sent By</th>
               <th style={{ ...thS, width: 110 }}>Date</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} style={{ padding: "60px 16px", textAlign: "center", color: "#8888a0" }}>
+              <tr><td colSpan={7} style={{ padding: "60px 16px", textAlign: "center", color: "#8888a0" }}>
                 <RefreshCw size={18} style={{ animation: "spin 1s linear infinite", display: "block", margin: "0 auto 12px" }} />
                 Loading logs…
               </td></tr>
             ) : logs.length === 0 ? (
-              <tr><td colSpan={6} style={{ padding: "60px 16px", textAlign: "center", color: "#8888a0" }}>
+              <tr><td colSpan={7} style={{ padding: "60px 16px", textAlign: "center", color: "#8888a0" }}>
                 <Send size={28} style={{ display: "block", margin: "0 auto 12px", opacity: 0.3 }} />
                 No sends yet.
               </td></tr>
@@ -97,12 +98,13 @@ export default function HistoryPage() {
                       <Icon size={11} /> {log.status}
                     </span>
                   </td>
+                  <td style={{ ...tdS, color: "#8888a0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>{log.domainLabel || "—"}</td>
                   <td style={{ ...tdS, color: "#8888a0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>{log.user.name}</td>
                   <td style={{ ...tdS, color: "#8888a0", fontSize: 12 }}>{new Date(log.sentAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
                 </tr>,
                 isOpen && (
                   <tr key={`${log.id}-exp`}>
-                    <td colSpan={6} style={{ padding: "12px 16px 16px", background: "#18181f", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                    <td colSpan={7} style={{ padding: "12px 16px 16px", background: "#18181f", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 24, fontSize: 12 }}>
                         <div>
                           <div style={{ color: "#8888a0", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Recipients</div>
