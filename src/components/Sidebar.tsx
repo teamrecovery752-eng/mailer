@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { LayoutDashboard, Send, Users, History, LogOut, ShieldCheck, Zap, Server, Mail, UserCog, Settings } from "lucide-react";
+import { LayoutDashboard, Send, Users, History, LogOut, ShieldCheck, Zap, Server, Mail, UserCog, Settings, ListFilter } from "lucide-react";
 import { DOMAINS_UPDATED_EVENT } from "@/lib/domainEvents";
 
 // Single source of truth for how each mail provider is displayed, so the
@@ -19,6 +19,7 @@ const baseNav = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Overview" },
   { href: "/dashboard/single", icon: Send, label: "Single Email" },
   { href: "/dashboard/bulk", icon: Users, label: "Bulk Email" },
+  { href: "/dashboard/list-cleaning", icon: ListFilter, label: "List Cleaning" },
   { href: "/dashboard/history", icon: History, label: "Send History" },
 ];
 const adminNav = [

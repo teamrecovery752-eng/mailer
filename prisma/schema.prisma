@@ -138,3 +138,30 @@ model Domain {
 
   @@map("domains")
 }
+
+// ─── Suppression List ───────────────────────────────────────────────────────
+
+enum SuppressionReason {
+  INVALID_FORMAT // never valid syntax to begin with
+  INVALID_DOMAIN // domain has no mail servers (MX lookup failed)
+  BOUNCED        // a real send to this address failed/bounced
+  MANUAL         // admin added it by hand (e.g. pasted from a provider's suppression page)
+}
+
+// A running list of addresses known to be bad, built two ways: (1)
+// automatically, whenever a real send fails for a recipient (see
+// recordBounces() in lib/suppressions.ts, called from the send routes),
+// and (2) manually, when an admin pastes in addresses from elsewhere
+// (e.g. Resend's own Suppressions page). The List Cleaning tool and the
+// Bulk Email "Clean List" step both check uploads against this so the
+// filter gets smarter the more the system sends.
+model SuppressedEmail {
+  id        String            @id @default(auto()) @map("_id") @db.ObjectId
+  email     String            @unique
+  reason    SuppressionReason
+  detail    String            @default("") // e.g. the bounce error message, or who added it manually
+  source    String            @default("") // domain label the bounce came from, or "manual"
+  createdAt DateTime          @default(now())
+
+  @@map("suppressed_emails")
+}

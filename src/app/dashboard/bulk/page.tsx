@@ -1,47 +1,13 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Upload, Send, Loader2, FileText, X, AlertTriangle, Code2, AlignLeft, LayoutTemplate, Check, Globe } from "lucide-react";
-import Papa from "papaparse";
-import * as XLSX from "xlsx";
+import { Upload, Send, Loader2, FileText, X, AlertTriangle, Code2, AlignLeft, LayoutTemplate, Check, Globe, ListFilter, Download, ShieldAlert } from "lucide-react";
 import { marketingTemplates } from "@/lib/marketingTemplates";
 import { useToast } from "@/components/Toast";
 import { DOMAINS_UPDATED_EVENT } from "@/lib/domainEvents";
+import { SPREADSHEET_ACCEPT, parseRecipientFile } from "@/lib/recipientFile";
+import { takeCleanedRecipients } from "@/lib/recipientHandoff";
 
-// Spreadsheet file extensions accepted by the recipient uploader.
-const SPREADSHEET_ACCEPT = ".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.ods";
-const DELIMITED_EXTENSIONS = new Set(["csv", "tsv", "txt"]);
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// Case-insensitive, whitespace/BOM-tolerant column name match. Handles
-// "Email", " EMAIL ", a BOM-prefixed first header, etc.
-const normalizeHeader = (s: string) => String(s).replace(/^\uFEFF/, "").trim().toLowerCase();
-
-// Given raw parsed rows (from either CSV/TSV via PapaParse or a sheet via
-// SheetJS), find the "email" and "name" columns regardless of their exact
-// capitalisation, surrounding whitespace, or position/number of columns in
-// the file, and copy their values onto canonical lowercase `email` / `name`
-// keys the rest of the app expects — without dropping the original column
-// (so a template using the original header as a merge tag still works).
-function normalizeRecipientRows(rawRows: Record<string, any>[]) {
-  if (!rawRows.length) return { data: [] as any[], columns: [] as string[], emailCol: null as string | null };
-
-  const rawCols = Object.keys(rawRows[0]);
-  const emailCol = rawCols.find((c) => normalizeHeader(c) === "email") || null;
-  const nameCol = rawCols.find((c) => normalizeHeader(c) === "name") || null;
-
-  const data = rawRows.map((row) => {
-    const next: Record<string, any> = { ...row };
-    if (emailCol) next.email = typeof row[emailCol] === "string" ? row[emailCol].trim() : row[emailCol];
-    if (nameCol) next.name = typeof row[nameCol] === "string" ? row[nameCol].trim() : row[nameCol];
-    return next;
-  });
-
-  let columns = rawCols;
-  if (emailCol && !columns.includes("email")) columns = [...columns, "email"];
-  if (nameCol && !columns.includes("name")) columns = [...columns, "name"];
-
-  return { data, columns, emailCol };
-}
 
 const card = { background: "#111116", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 24, marginBottom: 16 };
 const inputS: React.CSSProperties = { width: "100%", padding: "12px 16px", background: "#18181f", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, color: "#f0f0f5", fontSize: 14, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
@@ -111,76 +77,93 @@ export default function BulkEmailPage() {
     return () => window.removeEventListener(DOMAINS_UPDATED_EVENT, loadDomains);
   }, [loadDomains]);
 
-  // Shared finishing step once we have plain row objects, regardless of
-  // whether they came from PapaParse (CSV/TSV) or SheetJS (Excel/ODS).
-  function processRows(rawRows: any[]) {
-    if (!rawRows.length) {
-      showToast("error", "No data found", "That file doesn't seem to contain any rows.");
-      clearCSV();
-      return;
+  // Picks up a list handed off from the List Cleaning page's "Send to
+  // Bulk Email" button, if one is waiting — one-shot, so it won't
+  // reappear on a later visit to this page.
+  useEffect(() => {
+    const handoff = takeCleanedRecipients();
+    if (handoff && handoff.data.length) {
+      setRecipients(handoff.data);
+      setCsvColumns(handoff.columns);
+      setCsvFile("Cleaned list from List Cleaning");
+      showToast("success", "Loaded cleaned list", `${handoff.data.length.toLocaleString()} recipients ready to send.`);
     }
-
-    const { data, columns, emailCol } = normalizeRecipientRows(rawRows);
-
-    if (!emailCol) {
-      showToast("error", "Missing required column", 'Add an "email" column (any capitalisation) and re-upload.');
-      clearCSV();
-      return;
-    }
-
-    // Drop blank/trailing rows (common at the end of Excel exports) and
-    // anything without a plausible email address.
-    const cleaned = data.filter((row) => typeof row.email === "string" && EMAIL_REGEX.test(row.email));
-
-    if (!cleaned.length) {
-      showToast("error", "No valid email addresses found", "Check that the email column contains valid addresses.");
-      clearCSV();
-      return;
-    }
-
-    setCsvColumns(columns);
-    setRecipients(cleaned.slice(0, 10000));
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleCSV(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setCsvFile(file.name);
 
-    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    parseRecipientFile(file)
+      .then(({ data, columns, emailCol }) => {
+        if (!emailCol) {
+          showToast("error", "Missing required column", 'Add an "email" column (any capitalisation) and re-upload.');
+          clearCSV();
+          return;
+        }
 
-    if (DELIMITED_EXTENSIONS.has(ext)) {
-      // CSV/TSV/plain text — PapaParse auto-detects the delimiter.
-      Papa.parse(file, {
-        header: true, skipEmptyLines: true,
-        complete: (res) => processRows(res.data as any[]),
-        error: () => showToast("error", "Couldn't read file", "The CSV/TSV file appears to be corrupted."),
-      });
-      return;
-    }
+        // Drop blank/trailing rows (common at the end of Excel exports)
+        // and anything without a plausible email address.
+        const cleaned = data.filter((row) => typeof row.email === "string" && EMAIL_REGEX.test(row.email));
 
-    // Everything else (.xlsx, .xls, .xlsm, .ods) — parse with SheetJS,
-    // reading only the first worksheet.
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const buffer = evt.target?.result;
-        const workbook = XLSX.read(buffer, { type: "array" });
-        const firstSheetName = workbook.SheetNames[0];
-        if (!firstSheetName) throw new Error("No sheets found");
-        const sheet = workbook.Sheets[firstSheetName];
-        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
-        processRows(rows as any[]);
-      } catch {
-        showToast("error", "Couldn't read spreadsheet", "Make sure it's a valid Excel/ODS file and try again.");
+        if (!cleaned.length) {
+          showToast("error", "No valid email addresses found", "Check that the email column contains valid addresses.");
+          clearCSV();
+          return;
+        }
+
+        setCsvColumns(columns);
+        setRecipients(cleaned.slice(0, 10000));
+      })
+      .catch((err: Error) => {
+        showToast("error", "Couldn't read file", err.message);
         clearCSV();
-      }
-    };
-    reader.onerror = () => showToast("error", "Couldn't read file", "There was a problem reading the file.");
-    reader.readAsArrayBuffer(file);
+      });
   }
 
-  function clearCSV() { setRecipients([]); setCsvColumns([]); setCsvFile(""); setFailedErrors([]); if (fileRef.current) fileRef.current.value = ""; }
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanResult, setCleanResult] = useState<{ badCount: number; removedCount: number; bad: { email: string; reasons: string[] }[] } | null>(null);
+
+  async function handleCleanList() {
+    if (!recipients.length) return;
+    setCleaning(true);
+    setCleanResult(null);
+    try {
+      const res = await fetch("/api/validate-emails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipients }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast("error", "Couldn't clean list", data?.error || `Request failed (${res.status})`);
+      } else {
+        setRecipients(data.good);
+        setCleanResult({ badCount: data.badCount, removedCount: recipients.length - data.good.length, bad: data.bad });
+        showToast(data.badCount ? "info" : "success", data.badCount ? `Removed ${data.badCount.toLocaleString()} bad email${data.badCount === 1 ? "" : "s"}` : "List is clean", data.badCount ? `${data.good.length.toLocaleString()} ready to send.` : "No invalid, undeliverable, or previously-bounced addresses found.");
+      }
+    } catch {
+      showToast("error", "Couldn't clean list", "Could not reach the server. Check your connection and try again.");
+    }
+    setCleaning(false);
+  }
+
+  function downloadBadList() {
+    if (!cleanResult?.bad.length) return;
+    const rows = [["email", "reason"], ...cleanResult.bad.map((b) => [b.email, b.reasons.join("; ")])];
+    const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "bad-emails.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function clearCSV() { setRecipients([]); setCsvColumns([]); setCsvFile(""); setFailedErrors([]); setCleanResult(null); if (fileRef.current) fileRef.current.value = ""; }
 
   function resetComposeForm(opts?: { keepFailedErrors?: boolean }) {
     setRecipients([]);
@@ -314,6 +297,34 @@ export default function BulkEmailPage() {
                   <X size={16} />
                 </button>
               </div>
+
+              {/* Clean List — checks format, MX records, and past bounces */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+                <button type="button" onClick={handleCleanList} disabled={cleaning}
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", borderRadius: 9, background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", color: "#6366f1", cursor: cleaning ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", opacity: cleaning ? 0.6 : 1 }}>
+                  {cleaning ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <ListFilter size={14} />}
+                  {cleaning ? "Cleaning…" : "Clean List"}
+                </button>
+                <span style={{ fontSize: 11, color: "#8888a0" }}>Removes invalid formats, unreachable domains, duplicates, and previously-bounced addresses.</span>
+                <a href="/dashboard/list-cleaning" style={{ fontSize: 11, color: "#6366f1", marginLeft: "auto", textDecoration: "none", whiteSpace: "nowrap" }}>Manage suppression list →</a>
+              </div>
+
+              {cleanResult && (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 9, marginBottom: 16, background: cleanResult.badCount ? "rgba(245,158,11,0.1)" : "rgba(34,197,94,0.1)", border: `1px solid ${cleanResult.badCount ? "rgba(245,158,11,0.2)" : "rgba(34,197,94,0.2)"}` }}>
+                  <ShieldAlert size={15} color={cleanResult.badCount ? "#f59e0b" : "#22c55e"} style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1, fontSize: 12, color: cleanResult.badCount ? "#f59e0b" : "#22c55e" }}>
+                    {cleanResult.badCount
+                      ? `Removed ${cleanResult.badCount.toLocaleString()} bad email${cleanResult.badCount === 1 ? "" : "s"} — ${recipients.length.toLocaleString()} ready to send.`
+                      : "List is clean — no bad addresses found."}
+                  </div>
+                  {cleanResult.badCount > 0 && (
+                    <button type="button" onClick={downloadBadList}
+                      style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 7, background: "rgba(255,255,255,0.06)", border: "none", color: "#f0f0f5", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit", flexShrink: 0 }}>
+                      <Download size={12} /> Download removed ({cleanResult.badCount})
+                    </button>
+                  )}
+                </div>
+              )}
               {/* Preview */}
               <div style={{ borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,0.06)" }}>
                 <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", padding: "8px 16px", background: "#18181f", color: "#8888a0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>Preview — first 5 rows</div>

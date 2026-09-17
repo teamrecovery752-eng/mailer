@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { sendSingleEmail } from "@/lib/mailer";
 import { resolveDomain } from "@/lib/domains";
+import { recordBounces } from "@/lib/suppressions";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
@@ -21,7 +22,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Invalid emails: ${invalid.join(", ")}` }, { status: 400 });
 
     const domain = await resolveDomain(domainId);
-    const result = await sendSingleEmail({ to, subject, htmlBody, textBody, replyTo, domainId: domain.id });
+
+    let result;
+    try {
+      result = await sendSingleEmail({ to, subject, htmlBody, textBody, replyTo, domainId: domain.id });
+    } catch (sendErr: any) {
+      // Unlike a bad/missing domainId (caught below, before this point —
+      // never a reason to suppress anyone), a failure here came from the
+      // provider actually trying to deliver to these specific addresses,
+      // so it's fair game to feed into the suppression list.
+      recordBounces(emails.map((e: string) => `${e}: ${sendErr.message}`), domain.label).catch(() => {});
+      throw sendErr;
+    }
 
     // Log to MongoDB
     await prisma.emailLog.create({

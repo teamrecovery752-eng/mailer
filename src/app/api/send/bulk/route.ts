@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { sendBulkEmails } from "@/lib/mailer";
 import { resolveDomain } from "@/lib/domains";
+import { recordBounces } from "@/lib/suppressions";
 import { prisma } from "@/lib/prisma";
 
 // Bulk campaigns can take a while even when paced/batched correctly.
@@ -42,6 +43,10 @@ export async function POST(req: NextRequest) {
         domainLabel: domain.label,
       },
     });
+
+    // Feed every failed address back into the suppression list — best
+    // effort, never lets a logging hiccup affect the send response.
+    recordBounces(results.errors, domain.label).catch(() => {});
 
     return NextResponse.json({ success: true, ...results });
   } catch (err: any) {
